@@ -1,0 +1,129 @@
+[project]
+name = "protocol-arch-market-svc"
+version = "0.1.0"
+description = "Protocol Architecture Market Service - A lean market data service showcasing Protocol Architecture patterns"
+readme = "README.md"
+requires-python = ">=3.11.0"
+dependencies = [
+    "pydantic>=2.10.6",
+    "pydantic-settings>=2.8.1",
+    "websocket-client>=1.8.0",
+    "coinbase-advanced-py>=1.8.2",
+    "pandas>=2.0.0",
+    "textual>=2.1.2",
+    "python-dateutil>=2.8.2",
+    "requests>=2.31.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.25.3",
+    "pytest-cov>=6.0.0",
+    "mypy>=1.15.0",
+    "ruff>=0.8.0",
+    "pre-commit>=4.1.0",
+]
+
+[tool.uv.sources]
+# Add any custom package sources here if needed
+# Example:
+# package_name = [
+#     { index = "custom-index", marker = "platform_system != 'Darwin'" },
+# ]
+
+# [[tool.uv.index]]
+# name = "custom-index"
+# url = "https://custom.package.index/url"
+# explicit = true
+
+# ------------------------------------------------------------------------------
+# Pytest Configuration
+# ------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-v"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: mark a test as a unit test",
+    "integration: mark a test as an integration test",
+    "slow: mark a test as slow (skipped by default in CI)",
+]
+
+# ------------------------------------------------------------------------------
+# Ruff Configuration
+# ------------------------------------------------------------------------------
+[tool.ruff]
+# Attempt the maximum fix automation
+unsafe-fixes = true
+
+# The Python version Ruff should target
+target-version = "py311"
+
+[tool.ruff.format]
+# Your style preferences
+quote-style  = "double"
+indent-style = "space"
+line-ending  = "auto"
+
+# Whether to auto-format code within docstring code blocks
+docstring-code-format = false
+docstring-code-line-length = "dynamic"
+
+[tool.ruff.lint]
+# Instead of 'ALL', pick specific categories
+select = ["E", "F", "B", "I", "N", "D", "UP", "ANN", "RUF"]
+extend-select = ["F822"]  # Example: missing attribute detection
+
+# Disable contradictory docstring checks so we enforce D211 & D213
+ignore = [
+  "D203",  # conflicting with D211
+  "D212",  # conflicting with D213
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Example: test files can ignore docstring rules and have special import allowances
+"tests/**/*.py" = ["S101", "ANN", "D"]
+"tests/test_module1.py" = ["F401", "B011"]
+"__init__.py" = ["D104"]  # ignoring missing docstring in init
+"**/*.md" = ["E501"]       # ignore line-length in Markdown files
+
+# ------------------------------------------------------------------------------
+# isort settings (handled by Ruff)
+# ------------------------------------------------------------------------------
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+# ------------------------------------------------------------------------------
+# Additional lint plugin configs (also handled by Ruff)
+# ------------------------------------------------------------------------------
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = [
+  "classmethod",
+  "validator",
+  "root_validator",
+  "computed_field"
+]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+# ------------------------------------------------------------------------------
+# Mypy Configuration
+# ------------------------------------------------------------------------------
+[tool.mypy]
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
