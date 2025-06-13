@@ -1,4 +1,3 @@
-```markdown
 # Cognitive Protocol Architecture Market Service
 
 A **production-grade** demonstration of **Cognitive Protocol Architecture (CPA)** - a design pattern that unifies domain modeling, type safety, and AI readiness into a single coherent approach. Built with Python 3.13+, this real-time market data service shows how CPA reduces code by 50-70% while making systems naturally interpretable by both humans and AI.
@@ -372,4 +371,3 @@ MIT
 ---
 
 *The future of software isn't about adding AI to existing systems - it's about building systems that are intrinsically interpretable. CPA shows us how.*
-```
