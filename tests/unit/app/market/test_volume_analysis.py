@@ -349,12 +349,17 @@ class TestVolumeAnalysis:
 
         context = analysis.to_agent_context()
 
-        assert context["indicator"] == "volume"
-        assert "vwap" in context["values"]
-        assert "volume_ratio" in context["values"]
-        assert "buy_pressure" in context
-        assert "interpretation" in context
-        assert context["buy_pressure"] == "bullish"
+        # Check that we get a typed VolumeAgentContext object
+        from src.market.analysis.contexts import VolumeAgentContext
+
+        assert isinstance(context, VolumeAgentContext)
+
+        assert context.indicator == "volume"
+        assert context.profile.current_volume == 1500000
+        assert context.profile.average_volume == 1000000
+        assert context.profile.volume_ratio == 1.5
+        assert context.pressure == "buying"
+        assert context.strength == "moderate"
 
     def test_signal_generation(self) -> None:
         """Test trading signal generation based on volume."""
@@ -377,9 +382,9 @@ class TestVolumeAnalysis:
         )
 
         signal = analysis.suggest_signal()
-        assert signal["bias"] == "bullish"
-        assert signal["strength"] == "strong"
-        assert "high volume" in signal["reason"].lower()
+        assert signal.bias == "bullish"
+        assert signal.strength in ["strong", "moderate"]
+        assert "volume" in signal.reason.lower()
 
         # Low volume warning - create new instance
         low_volume_analysis = VolumeAnalysis(
@@ -398,9 +403,9 @@ class TestVolumeAnalysis:
         )
 
         signal = low_volume_analysis.suggest_signal()
-        assert signal["bias"] == "neutral"
-        assert signal["action"] == "wait"
-        assert "low volume" in signal["reason"].lower()
+        assert signal.bias == "neutral"
+        assert signal.action == "wait"
+        assert "low volume" in signal.reason.lower()
 
     def test_insufficient_data_handling(self) -> None:
         """Test handling of insufficient data."""

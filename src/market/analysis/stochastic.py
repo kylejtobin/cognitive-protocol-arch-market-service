@@ -6,12 +6,18 @@ of the close relative to the high-low range over a set number of periods.
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 import pandas as pd
 from pydantic import Field
 
 from src.market.analysis.base import BaseIndicator
+from src.market.analysis.contexts import (
+    SignalSuggestion,
+    StochasticAgentContext,
+    StochasticValues,
+    StochasticZones,
+)
 from src.market.analysis.registry import register
 
 
@@ -262,29 +268,31 @@ class StochasticAnalysis(BaseIndicator):
 
         return summary
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> StochasticAgentContext:
         """Format analysis for agent consumption."""
-        return {
-            "indicator": "stochastic",
-            "values": {
-                "k": round(self.k_value, 2),
-                "d": round(self.d_value, 2),
-            },
-            "zone": self.momentum_zone,
-            "levels": {
-                "overbought": 80,
-                "oversold": 20,
-                "current_k": round(self.k_value, 2),
-            },
-            "signals": {
-                "crossover": self.crossover_type if self.crossover_detected else None,
-                "divergence": self.divergence_type
-                if self.divergence_detected
-                else None,
-                "zone": self.momentum_zone,
-            },
-            "interpretation": self._generate_interpretation(),
-        }
+        # Determine momentum based on crossover and zone
+        momentum: Literal["bullish", "bearish", "neutral"]
+        if self.crossover_type == "bullish" or self.momentum_zone == "oversold":
+            momentum = "bullish"
+        elif self.crossover_type == "bearish" or self.momentum_zone == "overbought":
+            momentum = "bearish"
+        else:
+            momentum = "neutral"
+
+        return StochasticAgentContext(
+            values=StochasticValues(
+                k_percent=self.k_value,
+                d_percent=self.d_value,
+            ),
+            zones=StochasticZones(
+                current_zone=self.momentum_zone,
+                k_zone=self.momentum_zone,
+                d_zone=self._determine_momentum_zone(self.d_value),
+            ),
+            momentum=momentum,
+            crossover=self.crossover_type,
+            interpretation=self._generate_interpretation(),
+        )
 
     def _generate_interpretation(self) -> str:
         """Generate detailed interpretation for agents."""
@@ -347,57 +355,63 @@ class StochasticAnalysis(BaseIndicator):
                 "Wait for clearer signals or zone entry."
             )
 
-    def suggest_signal(self) -> dict[str, str]:
+    def suggest_signal(self) -> SignalSuggestion:
         """Suggest trading signal based on stochastic analysis."""
         if self.crossover_detected:
             if self.crossover_type == "bullish" and self.momentum_zone == "oversold":
-                return {
-                    "bias": "bullish",
-                    "strength": "strong",
-                    "reason": "Bullish crossover in oversold zone",
-                    "action": "enter_long",
-                }
+                return SignalSuggestion(
+                    bias="bullish",
+                    strength="strong",
+                    reason="Bullish crossover in oversold zone",
+                    action="enter_long",
+                )
             elif (
                 self.crossover_type == "bearish" and self.momentum_zone == "overbought"
             ):
-                return {
-                    "bias": "bearish",
-                    "strength": "strong",
-                    "reason": "Bearish crossover in overbought zone",
-                    "action": "enter_short",
-                }
+                return SignalSuggestion(
+                    bias="bearish",
+                    strength="strong",
+                    reason="Bearish crossover in overbought zone",
+                    action="enter_short",
+                )
             else:
-                return {
-                    "bias": self.crossover_type,
-                    "strength": "moderate",
-                    "reason": f"{self.crossover_type.title()} crossover at {self.k_value:.1f}",  # noqa: E501
-                    "action": "await_confirmation",
-                }
+                bias: Literal["bullish", "bearish", "neutral"] = (
+                    "bullish" if self.crossover_type == "bullish" else "bearish"
+                )
+                return SignalSuggestion(
+                    bias=bias,
+                    strength="moderate",
+                    reason=f"{self.crossover_type.title()} crossover at {self.k_value:.1f}",
+                    action="await_confirmation",
+                )
         elif self.divergence_detected:
-            return {
-                "bias": self.divergence_type,
-                "strength": "moderate",
-                "reason": f"{self.divergence_type.title()} divergence detected",
-                "action": "prepare_reversal",
-            }
+            div_bias: Literal["bullish", "bearish", "neutral"] = (
+                "bullish" if self.divergence_type == "bullish" else "bearish"
+            )
+            return SignalSuggestion(
+                bias=div_bias,
+                strength="moderate",
+                reason=f"{self.divergence_type.title()} divergence detected",
+                action="prepare_reversal",
+            )
         elif self.momentum_zone == "oversold":
-            return {
-                "bias": "bullish",
-                "strength": "weak",
-                "reason": f"Oversold at {self.k_value:.1f}",
-                "action": "watch_for_bounce",
-            }
+            return SignalSuggestion(
+                bias="bullish",
+                strength="weak",
+                reason=f"Oversold at {self.k_value:.1f}",
+                action="watch_for_bounce",
+            )
         elif self.momentum_zone == "overbought":
-            return {
-                "bias": "bearish",
-                "strength": "weak",
-                "reason": f"Overbought at {self.k_value:.1f}",
-                "action": "watch_for_pullback",
-            }
+            return SignalSuggestion(
+                bias="bearish",
+                strength="weak",
+                reason=f"Overbought at {self.k_value:.1f}",
+                action="watch_for_pullback",
+            )
         else:
-            return {
-                "bias": "neutral",
-                "strength": "weak",
-                "reason": "No clear stochastic signal",
-                "action": "wait",
-            }
+            return SignalSuggestion(
+                bias="neutral",
+                strength="weak",
+                reason="No clear stochastic signal",
+                action="wait",
+            )

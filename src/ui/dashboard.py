@@ -162,7 +162,7 @@ class CompactIndicatorGrid(Widget):
         for indicator in self.indicators:
             signal = indicator.suggest_signal()
             bias_color = {"bullish": "green", "bearish": "red", "neutral": "yellow"}[
-                signal["bias"]
+                signal.bias
             ]
 
             if isinstance(indicator, RSIAnalysis):
@@ -183,16 +183,16 @@ class CompactIndicatorGrid(Widget):
 
             elif isinstance(indicator, MACDAnalysis):
                 # MACD with histogram visualization
-                hist_bar = "▲" if indicator.histogram > 0 else "▼"
-                hist_size = min(5, int(abs(indicator.histogram) / 2))
+                hist_bar = "▲" if indicator.histogram_value > 0 else "▼"
+                hist_size = min(5, int(abs(indicator.histogram_value) / 2))
                 content = Text()
                 content.append(
-                    f"MACD: {indicator.macd_line:.2f}\n", style=f"bold {bias_color}"
+                    f"MACD: {indicator.macd_value:.2f}\n", style=f"bold {bias_color}"
                 )
-                content.append(f"Signal: {indicator.signal_line:.2f}\n", style="dim")
+                content.append(f"Signal: {indicator.signal_value:.2f}\n", style="dim")
                 content.append(
-                    f"Hist: {hist_bar * hist_size} {indicator.histogram:.2f}\n",
-                    style="green" if indicator.histogram > 0 else "red",
+                    f"Hist: {hist_bar * hist_size} {indicator.histogram_value:.2f}\n",
+                    style="green" if indicator.histogram_value > 0 else "red",
                 )
                 if indicator.crossover_detected:
                     content.append(

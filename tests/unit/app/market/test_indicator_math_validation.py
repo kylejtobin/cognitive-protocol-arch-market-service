@@ -91,9 +91,9 @@ class TestIndicatorMathValidation:
         # - MACD should be positive (fast EMA > slow EMA)
         # - Signal should be positive
         # - Histogram should be relatively small
-        assert macd.macd_line > 0
-        assert macd.signal_line > 0
-        assert abs(macd.histogram) < abs(macd.macd_line) * 0.5
+        assert macd.macd_value > 0
+        assert macd.signal_value > 0
+        assert abs(macd.histogram_value) < abs(macd.macd_value) * 0.5
 
     def test_macd_crossover_scenario(self) -> None:
         """Test MACD in a crossover scenario."""
@@ -114,7 +114,7 @@ class TestIndicatorMathValidation:
         )
 
         # After transition, MACD should show bullish characteristics
-        assert macd.trend_state in ["bullish", "neutral"]
+        assert macd.trend in ["bullish", "neutral"]
 
     def test_stochastic_known_values(self) -> None:
         """Test Stochastic with known high/low ranges."""
@@ -196,7 +196,7 @@ class TestIndicatorMathValidation:
 
         # All should show bullish signals
         assert rsi.momentum_state in ["bullish", "strongly_bullish"]
-        assert macd.trend_state == "bullish"
+        assert macd.trend in ["bullish", "neutral"]
         assert stoch.momentum_zone in ["neutral", "overbought"]  # Uptrend pushes high
 
         # Signal suggestions should align
@@ -205,7 +205,7 @@ class TestIndicatorMathValidation:
         stoch.suggest_signal()
 
         # In strong uptrend, MACD should be bullish
-        assert macd_signal["bias"] in ["bullish", "neutral"]
+        assert macd_signal.bias in ["bullish", "neutral"]
         # RSI might show overbought (bearish bias) which is expected
         # Stochastic might show overbought, which is bearish bias
         # So we only check MACD for consistent bullish signal

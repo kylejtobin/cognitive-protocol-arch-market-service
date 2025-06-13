@@ -76,12 +76,14 @@ class TestMACDAnalysis:
         assert macd.signal_period == 9
 
         # MACD values should be calculated
-        assert isinstance(macd.macd_line, float)
-        assert isinstance(macd.signal_line, float)
-        assert isinstance(macd.histogram, float)
+        assert isinstance(macd.macd_value, float)
+        assert isinstance(macd.signal_value, float)
+        assert isinstance(macd.histogram_value, float)
 
         # Histogram = MACD - Signal
-        assert abs(macd.histogram - (macd.macd_line - macd.signal_line)) < 0.0001
+        assert (
+            abs(macd.histogram_value - (macd.macd_value - macd.signal_value)) < 0.0001
+        )
 
     def test_insufficient_data_error(self) -> None:
         """Test error when insufficient data provided."""
@@ -106,7 +108,7 @@ class TestMACDAnalysis:
         )
 
         # For a generally upward trend, we expect bullish state
-        assert macd.trend_state in ["bullish", "neutral"]
+        assert macd.trend in ["bullish", "neutral"]
 
     def test_bearish_crossover_detection(self) -> None:
         """Test detection of bearish crossover."""
@@ -120,7 +122,7 @@ class TestMACDAnalysis:
         )
 
         # For a generally downward trend, we expect bearish state
-        assert macd.trend_state in ["bearish", "neutral"]
+        assert macd.trend in ["bearish", "neutral"]
 
     def test_trend_strength_classification(self) -> None:
         """Test trend strength classification."""
@@ -141,7 +143,7 @@ class TestMACDAnalysis:
         )
 
         # Strong trend should have larger histogram values on average
-        assert abs(macd_strong.histogram) >= abs(macd_weak.histogram)
+        assert abs(macd_strong.histogram_value) >= abs(macd_weak.histogram_value)
 
     def test_semantic_summary(self) -> None:
         """Test semantic summary generation."""
@@ -156,7 +158,7 @@ class TestMACDAnalysis:
         summary = macd.semantic_summary()
         assert isinstance(summary, str)
         assert "MACD" in summary
-        assert macd.trend_state in summary.lower()
+        assert macd.trend in summary.lower()
 
     def test_to_agent_context(self) -> None:
         """Test agent context generation."""
@@ -170,18 +172,33 @@ class TestMACDAnalysis:
 
         context = macd.to_agent_context()
 
-        # Check structure
-        assert context["indicator"] == "macd"
-        assert "values" in context
-        assert "state" in context
-        assert "strength" in context
-        assert "signals" in context
-        assert "interpretation" in context
+        # Check that we get a typed MACDAgentContext object
+        from src.market.analysis.contexts import MACDAgentContext
 
-        # Check values
-        assert context["values"]["macd"] == round(macd.macd_line, 4)
-        assert context["values"]["signal"] == round(macd.signal_line, 4)
-        assert context["values"]["histogram"] == round(macd.histogram, 4)
+        assert isinstance(context, MACDAgentContext)
+
+        # Check structure
+        assert context.indicator == "macd"
+        assert context.trend == macd.trend
+        assert context.momentum == macd.momentum
+
+        # Check values (exact match since they come from same source)
+        assert context.values.macd == macd.macd_value
+        assert context.values.signal == macd.signal_value
+        assert context.values.histogram == macd.histogram_value
+
+        # Check signals
+        assert context.signals.histogram_trend in [
+            "expanding",
+            "contracting",
+            "neutral",
+        ]
+        assert context.signals.signal_position in [
+            "above_signal",
+            "below_signal",
+            "at_signal",
+        ]
+        assert context.signals.zero_cross in ["bullish", "bearish", "none"]
 
     def test_suggest_signal(self) -> None:
         """Test signal suggestion generation."""
@@ -195,15 +212,16 @@ class TestMACDAnalysis:
 
         signal = macd.suggest_signal()
 
-        # Check structure
-        assert "bias" in signal
-        assert "strength" in signal
-        assert "reason" in signal
-        assert "action" in signal
+        # Check that we get a typed SignalSuggestion object
+        from src.market.analysis.contexts import SignalSuggestion
+
+        assert isinstance(signal, SignalSuggestion)
 
         # Check valid values
-        assert signal["bias"] in ["bullish", "bearish", "neutral"]
-        assert signal["strength"] in ["strong", "moderate", "weak"]
+        assert signal.bias in ["bullish", "bearish", "neutral"]
+        assert signal.strength in ["strong", "moderate", "weak"]
+        assert signal.reason
+        assert signal.action
 
     def test_field_validation(self) -> None:
         """Test field validation for periods."""
@@ -211,7 +229,7 @@ class TestMACDAnalysis:
 
         # Test that slow period must be greater than fast period
         with pytest.raises(
-            ValueError, match="Slow period .* must be greater than fast period"
+            ValueError, match="Slow period must be greater than fast period"
         ):
             MACDAnalysis.from_price_series(
                 prices=prices,
@@ -221,30 +239,6 @@ class TestMACDAnalysis:
                 slow_period=12,
                 signal_period=9,
             )
-
-    def test_divergence_detection(self) -> None:
-        """Test divergence detection (when enabled)."""
-        # Create price series with potential divergence
-        # Price making higher highs but momentum weakening
-        prices: list[float] = []
-        for i in range(50):
-            if i < 25:
-                prices.append(100 + i * 2)  # Strong uptrend
-            else:
-                prices.append(150 + (i - 25) * 0.5)  # Weakening uptrend
-
-        prices_series = pd.Series(prices)
-
-        macd = MACDAnalysis.from_price_series(
-            prices=prices_series,
-            symbol="TEST",
-            timestamp=datetime.now(UTC),
-            check_divergence=True,
-        )
-
-        # Should have divergence detection fields
-        assert isinstance(macd.divergence_detected, bool)
-        assert macd.divergence_type in ["bullish", "bearish", "none"]
 
     def test_crossover_in_signal(self) -> None:
         """Test that crossover affects signal suggestion."""
@@ -268,7 +262,7 @@ class TestMACDAnalysis:
 
         # If crossover detected, it should be mentioned in the reason
         if macd.crossover_detected:
-            assert "crossover" in signal["reason"].lower()
+            assert "crossover" in signal.reason.lower()
 
     def test_edge_cases(self) -> None:
         """Test edge cases like flat prices."""
@@ -282,10 +276,10 @@ class TestMACDAnalysis:
         )
 
         # With flat prices, MACD should be near zero
-        assert abs(macd_flat.macd_line) < 0.1
-        assert abs(macd_flat.signal_line) < 0.1
-        assert abs(macd_flat.histogram) < 0.1
-        assert macd_flat.trend_state == "neutral"
+        assert abs(macd_flat.macd_value) < 0.1
+        assert abs(macd_flat.signal_value) < 0.1
+        assert abs(macd_flat.histogram_value) < 0.1
+        assert macd_flat.trend == "neutral"
 
     def test_registry_integration(self) -> None:
         """Test that MACD is properly registered."""

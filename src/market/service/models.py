@@ -6,12 +6,22 @@ ensure data validation at service boundaries.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TypedDict
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.market.analysis.base import BaseIndicator
+
+
+class IndicatorResultDict(TypedDict):
+    """Typed dict for IndicatorResult API response."""
+
+    symbol: str
+    timestamp: str
+    indicators: list[dict[str, object]]
+    errors: list[str]
+    success: bool
 
 
 class PriceSeries(BaseModel):
@@ -134,15 +144,15 @@ class IndicatorResult(BaseModel):
                 return indicator
         return None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> IndicatorResultDict:
         """Convert to dictionary for API responses."""
-        return {
-            "symbol": self.symbol,
-            "timestamp": self.timestamp.isoformat(),
-            "indicators": [ind.model_dump() for ind in self.indicators],
-            "errors": self.errors,
-            "success": self.success,
-        }
+        return IndicatorResultDict(
+            symbol=self.symbol,
+            timestamp=self.timestamp.isoformat(),
+            indicators=[ind.model_dump() for ind in self.indicators],
+            errors=self.errors,
+            success=self.success,
+        )
 
 
 class BatchCalculationRequest(BaseModel):

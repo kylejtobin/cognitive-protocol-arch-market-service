@@ -10,7 +10,11 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from src.market.analysis.base import BaseIndicator
+from src.market.analysis.base import AgentContext, BaseIndicator
+from src.market.analysis.contexts import (
+    BaseAgentContext,
+    SignalSuggestion,
+)
 from src.market.analysis.registry import IndicatorRegistry
 
 
@@ -24,21 +28,18 @@ class MockIndicator(BaseIndicator):
         """One-line summary."""
         return f"Test indicator: {self.test_value}"
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> AgentContext:
         """Agent context."""
-        return {
-            "indicator": "test",
-            "value": self.test_value,
-        }
 
-    def suggest_signal(self) -> dict[str, str]:
+        return BaseAgentContext(
+            indicator="test", interpretation=f"Test indicator value: {self.test_value}"
+        )
+
+    def suggest_signal(self) -> SignalSuggestion:
         """Signal suggestion."""
-        return {
-            "bias": "neutral",
-            "strength": "weak",
-            "reason": "test",
-            "action": "wait",
-        }
+        return SignalSuggestion(
+            bias="neutral", strength="weak", reason="test", action="wait"
+        )
 
 
 class TestBaseIndicator:
@@ -94,15 +95,16 @@ class TestBaseIndicator:
 
         # Test to_agent_context
         context = indicator.to_agent_context()
-        assert isinstance(context, dict)
-        assert context["indicator"] == "test"
-        assert context["value"] == 42.0
+
+        assert isinstance(context, BaseAgentContext)
+        assert context.indicator == "test"
+        assert "42.0" in context.interpretation
 
         # Test suggest_signal
         signal = indicator.suggest_signal()
-        assert isinstance(signal, dict)
-        assert signal["bias"] == "neutral"
-        assert signal["action"] == "wait"
+        assert isinstance(signal, SignalSuggestion)
+        assert signal.bias == "neutral"
+        assert signal.action == "wait"
 
 
 class TestIndicatorRegistry:

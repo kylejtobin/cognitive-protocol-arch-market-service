@@ -10,10 +10,15 @@ These models demonstrate the "composed pydantic model machines" pattern:
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.market.analysis.contexts import (
+    MicrostructureAgentContext,
+    SpreadInfo,
+    TradeFlowInfo,
+)
 from src.market.model.snapshot import MarketSnapshot
 
 
@@ -257,31 +262,31 @@ class MarketMicrostructure(BaseModel):
             ),
         }
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> MicrostructureAgentContext:
         """
         Format microstructure analysis for agent consumption.
 
         Provides rich analytical data without making decisions.
         """
-        return {
-            "symbol": self.symbol,
-            "timestamp": self.timestamp.isoformat(),
-            "market_quality": self.market_quality,
-            "liquidity_score": float(self.liquidity_score),
-            "execution_cost_bps": float(self.execution_cost_bps),
-            "spread": {
-                "current_bps": float(self.spread_analysis.spread_bps),
-                "is_widening": self.spread_analysis.is_widening,
-                "volatility": float(self.spread_analysis.volatility_score),
-            },
-            "trade_flow": {
-                "momentum_score": float(self.trade_flow.momentum_score),
-                "buy_pressure": float(self.trade_flow.buy_pressure),
-                "trend": self.trade_flow.price_trend,
-                "volume": float(self.trade_flow.total_volume),
-            },
-            "summary": self._generate_summary(),
-        }
+        return MicrostructureAgentContext(
+            symbol=self.symbol,
+            timestamp=self.timestamp.isoformat(),
+            market_quality=self.market_quality,
+            liquidity_score=float(self.liquidity_score),
+            execution_cost_bps=float(self.execution_cost_bps),
+            spread=SpreadInfo(
+                current_bps=float(self.spread_analysis.spread_bps),
+                is_widening=self.spread_analysis.is_widening,
+                volatility=float(self.spread_analysis.volatility_score),
+            ),
+            trade_flow=TradeFlowInfo(
+                momentum_score=float(self.trade_flow.momentum_score),
+                buy_pressure=float(self.trade_flow.buy_pressure),
+                trend=self.trade_flow.price_trend,
+                volume=float(self.trade_flow.total_volume),
+            ),
+            summary=self._generate_summary(),
+        )
 
     def _generate_summary(self) -> str:
         """Generate a natural language summary of market conditions."""

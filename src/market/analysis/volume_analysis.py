@@ -6,13 +6,19 @@ volume trends, buy/sell pressure estimation, and volume profile analysis.
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 from pydantic import Field, model_validator
 
 from src.market.analysis.base import BaseIndicator
+from src.market.analysis.contexts import (
+    SignalSuggestion,
+    VolumeAgentContext,
+    VolumeProfile,
+    VolumeSignals,
+)
 from src.market.analysis.registry import register
 
 
@@ -332,39 +338,43 @@ class VolumeAnalysis(BaseIndicator):
         else:
             return f"Volume {ratio_str} average, {trend_str}, VWAP ${self.vwap:,.2f}"
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> VolumeAgentContext:
         """Format for agent consumption."""
         # Determine buy pressure
+        pressure: Literal["buying", "selling", "neutral"]
         if self.buy_volume_pct > 0.6:
-            buy_pressure = "bullish"
+            pressure = "buying"
         elif self.sell_volume_pct > 0.6:
-            buy_pressure = "bearish"
+            pressure = "selling"
         else:
-            buy_pressure = "neutral"
+            pressure = "neutral"
 
-        context = {
-            "indicator": "volume",
-            "values": {
-                "vwap": round(self.vwap, 2),
-                "volume_ratio": round(self.volume_ratio, 2),
-                "current_volume": self.current_volume,
-                "buy_pct": round(self.buy_volume_pct, 3),
-                "sell_pct": round(self.sell_volume_pct, 3),
-            },
-            "volume_state": self.volume_strength,
-            "volume_trend": self.volume_trend,
-            "buy_pressure": buy_pressure,
-            "price_correlation": round(self.price_volume_correlation, 2),
-            "interpretation": self._generate_interpretation(),
-        }
+        # Determine strength
+        strength: Literal["strong", "moderate", "weak"]
+        if self.volume_strength == "high":
+            strength = "strong"
+        elif self.volume_strength == "moderate":
+            strength = "moderate"
+        else:
+            strength = "weak"
 
-        if self.volume_nodes:
-            context["key_levels"] = [
-                {"price": node["price"], "strength": node["pct_of_total"]}
-                for node in self.volume_nodes[:3]
-            ]
-
-        return context
+        return VolumeAgentContext(
+            profile=VolumeProfile(
+                current_volume=self.current_volume,
+                average_volume=self.average_volume,
+                volume_ratio=self.volume_ratio,
+                volume_trend=self.volume_trend,
+            ),
+            pressure=pressure,
+            strength=strength,
+            signals=VolumeSignals(
+                is_high_volume=self.volume_strength == "high",
+                is_low_volume=self.volume_strength == "low",
+                volume_spike=self.volume_ratio > 2.0,
+                volume_dry_up=self.volume_ratio < 0.5,
+            ),
+            interpretation=self._generate_interpretation(),
+        )
 
     def _generate_interpretation(self) -> str:
         """Generate detailed interpretation for agents."""
@@ -408,58 +418,58 @@ class VolumeAnalysis(BaseIndicator):
                     "No significant volume signals."
                 )
 
-    def suggest_signal(self) -> dict[str, str]:
+    def suggest_signal(self) -> SignalSuggestion:
         """Suggest trading signal based on volume analysis."""
         # High volume scenarios
         if self.volume_strength == "high":
             if self.buy_volume_pct > 0.7:
-                return {
-                    "bias": "bullish",
-                    "strength": "strong",
-                    "reason": "High volume buying pressure detected",
-                    "action": "consider_long"
+                return SignalSuggestion(
+                    bias="bullish",
+                    strength="strong",
+                    reason="High volume buying pressure detected",
+                    action="consider_long"
                     if self.volume_trend == "increasing"
                     else "monitor",
-                }
+                )
             elif self.sell_volume_pct > 0.7:
-                return {
-                    "bias": "bearish",
-                    "strength": "strong",
-                    "reason": "High volume selling pressure detected",
-                    "action": "consider_short"
+                return SignalSuggestion(
+                    bias="bearish",
+                    strength="strong",
+                    reason="High volume selling pressure detected",
+                    action="consider_short"
                     if self.volume_trend == "increasing"
                     else "reduce_risk",
-                }
+                )
 
         # Low volume warning
-        elif self.volume_strength == "low":
-            return {
-                "bias": "neutral",
-                "strength": "weak",
-                "reason": "Low volume - lack of market participation",
-                "action": "wait",
-            }
+        if self.volume_strength == "low":
+            return SignalSuggestion(
+                bias="neutral",
+                strength="weak",
+                reason="Low volume - lack of market participation",
+                action="wait",
+            )
 
         # Moderate volume with trend
-        elif self.volume_trend == "increasing" and self.buy_volume_pct > 0.6:
-            return {
-                "bias": "bullish",
-                "strength": "moderate",
-                "reason": "Increasing volume with buy pressure",
-                "action": "prepare_entry",
-            }
+        if self.volume_trend == "increasing" and self.buy_volume_pct > 0.6:
+            return SignalSuggestion(
+                bias="bullish",
+                strength="moderate",
+                reason="Increasing volume with buy pressure",
+                action="prepare_entry",
+            )
         elif self.volume_trend == "increasing" and self.sell_volume_pct > 0.6:
-            return {
-                "bias": "bearish",
-                "strength": "moderate",
-                "reason": "Increasing volume with sell pressure",
-                "action": "consider_exit",
-            }
+            return SignalSuggestion(
+                bias="bearish",
+                strength="moderate",
+                reason="Increasing volume with sell pressure",
+                action="consider_exit",
+            )
 
         # Default neutral
-        return {
-            "bias": "neutral",
-            "strength": "weak",
-            "reason": "No clear volume signals",
-            "action": "monitor",
-        }
+        return SignalSuggestion(
+            bias="neutral",
+            strength="weak",
+            reason="No clear volume signals",
+            action="monitor",
+        )

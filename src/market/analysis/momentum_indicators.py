@@ -11,12 +11,18 @@ into Pydantic models for use in the analysis pipeline. Each indicator:
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Literal
 
 import pandas as pd
 from pydantic import ConfigDict, Field, field_validator
 
 from src.market.analysis.base import BaseIndicator
+from src.market.analysis.contexts import (
+    RSIAgentContext,
+    RSIKeyLevels,
+    RSISignals,
+    SignalSuggestion,
+)
 from src.market.analysis.registry import register
 
 
@@ -259,30 +265,27 @@ class RSIAnalysis(BaseIndicator):
 
         return summary
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> RSIAgentContext:
         """Format analysis for agent consumption."""
         interpretation = self._generate_interpretation()
 
-        return {
-            "indicator": "rsi",
-            "value": self.rsi_value,
-            "state": self.momentum_state,
-            "strength": self.momentum_strength,
-            "key_levels": {
-                "overbought": 70,
-                "oversold": 30,
-                "neutral": 50,
-                "current": self.rsi_value,
-            },
-            "signals": {
-                "is_overbought": self.is_overbought,
-                "is_oversold": self.is_oversold,
-                "divergence": self.divergence_type
-                if self.divergence_detected
-                else None,
-            },
-            "interpretation": interpretation,
-        }
+        return RSIAgentContext(
+            value=self.rsi_value,
+            state=self.momentum_state,
+            strength=self.momentum_strength,
+            key_levels=RSIKeyLevels(
+                current=self.rsi_value,
+                overbought=70,
+                oversold=30,
+                neutral=50,
+            ),
+            signals=RSISignals(
+                is_overbought=self.is_overbought,
+                is_oversold=self.is_oversold,
+                divergence=self.divergence_type if self.divergence_detected else None,
+            ),
+            interpretation=interpretation,
+        )
 
     def _generate_interpretation(self) -> str:
         """Generate detailed interpretation for agents."""
@@ -326,36 +329,36 @@ class RSIAnalysis(BaseIndicator):
         else:
             return "weak"
 
-    def suggest_signal(self) -> dict[str, str]:
+    def suggest_signal(self) -> SignalSuggestion:
         """Suggest trading signal based on RSI analysis."""
         if self.is_oversold:
-            return {
-                "bias": "bullish",
-                "strength": self._calculate_signal_strength(),
-                "reason": f"RSI oversold at {self.rsi_value:.1f}",
-                "action": "watch_for_reversal",
-            }
+            return SignalSuggestion(
+                bias="bullish",
+                strength=self._calculate_signal_strength(),
+                reason=f"RSI oversold at {self.rsi_value:.1f}",
+                action="watch_for_reversal",
+            )
         elif self.is_overbought:
-            return {
-                "bias": "bearish",
-                "strength": self._calculate_signal_strength(),
-                "reason": f"RSI overbought at {self.rsi_value:.1f}",
-                "action": "consider_profit_taking",
-            }
+            return SignalSuggestion(
+                bias="bearish",
+                strength=self._calculate_signal_strength(),
+                reason=f"RSI overbought at {self.rsi_value:.1f}",
+                action="consider_profit_taking",
+            )
         elif self.divergence_detected:
-            return {
-                "bias": "bullish" if self.divergence_type == "bullish" else "bearish",
-                "strength": "moderate",
-                "reason": f"{self.divergence_type.title()} divergence detected",
-                "action": "await_confirmation",
-            }
+            return SignalSuggestion(
+                bias="bullish" if self.divergence_type == "bullish" else "bearish",
+                strength="moderate",
+                reason=f"{self.divergence_type.title()} divergence detected",
+                action="await_confirmation",
+            )
         else:
-            return {
-                "bias": "neutral",
-                "strength": "weak",
-                "reason": f"No clear signal at RSI {self.rsi_value:.1f}",
-                "action": "wait",
-            }
+            return SignalSuggestion(
+                bias="neutral",
+                strength="weak",
+                reason=f"No clear signal at RSI {self.rsi_value:.1f}",
+                action="wait",
+            )
 
     model_config = ConfigDict(
         json_encoders={

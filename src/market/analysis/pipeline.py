@@ -11,7 +11,7 @@ Each stage validates its inputs and outputs using Pydantic.
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING
 
 from src.market.analysis.models import (
     MarketMicrostructure,
@@ -20,6 +20,9 @@ from src.market.analysis.models import (
     TradingSignal,
 )
 from src.market.model.snapshot import MarketSnapshot
+
+if TYPE_CHECKING:
+    from coinbase.websocket import WSClient
 
 
 class AnalysisPipeline:
@@ -132,7 +135,7 @@ class AnalysisPipeline:
 
 
 # Example usage demonstrating the pipeline
-def example_pipeline_usage() -> tuple[Any, AnalysisPipeline]:
+def example_pipeline_usage() -> tuple["WSClient", AnalysisPipeline]:
     """Show how to use the analysis pipeline with streaming data."""
     from src.market.adapters.coinbase.stream import stream_coinbase_market_data
 
