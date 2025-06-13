@@ -184,28 +184,28 @@ class TestRSIAnalysis:
 
         context = analysis.to_agent_context()
 
-        # Check for the actual fields in our clean API
-        assert context["indicator"] == "rsi"
-        assert "value" in context
-        assert "state" in context
-        assert "strength" in context
-        assert "key_levels" in context
-        assert "signals" in context
-        assert "interpretation" in context
+        # Check that we get a typed RSIAgentContext object
+        from src.market.analysis.contexts import RSIAgentContext
 
-        # Verify structure
-        assert context["value"] == analysis.rsi_value
-        assert context["state"] == analysis.momentum_state
-        assert context["strength"] == analysis.momentum_strength
+        assert isinstance(context, RSIAgentContext)
+
+        # Verify the typed fields
+        assert context.value == analysis.rsi_value
+        assert context.state == analysis.momentum_state
+        assert context.strength == analysis.momentum_strength
+        assert context.indicator == "rsi"
 
         # Check nested structures
-        assert context["key_levels"]["current"] == analysis.rsi_value
-        assert context["key_levels"]["overbought"] == 70
-        assert context["key_levels"]["oversold"] == 30
-        assert context["key_levels"]["neutral"] == 50
+        assert context.key_levels.current == analysis.rsi_value
+        assert context.key_levels.overbought == 70
+        assert context.key_levels.oversold == 30
+        assert context.key_levels.neutral == 50
 
-        assert context["signals"]["is_overbought"] == analysis.is_overbought
-        assert context["signals"]["is_oversold"] == analysis.is_oversold
+        assert context.signals.is_overbought == analysis.is_overbought
+        assert context.signals.is_oversold == analysis.is_oversold
+
+        # Check interpretation
+        assert "RSI" in context.interpretation
 
     def test_rsi_different_periods(self) -> None:
         """Test RSI with different period settings."""
@@ -278,6 +278,6 @@ class TestRSIAnalysis:
         )
 
         signal = analysis.suggest_signal()
-        assert signal["bias"] == "bullish"  # Oversold = potential bounce
-        assert signal["strength"] in ["weak", "moderate", "strong"]
-        assert "RSI oversold" in signal["reason"]
+        assert signal.bias == "bullish"  # Oversold = potential bounce
+        assert signal.strength in ["weak", "moderate", "strong"]
+        assert "RSI oversold" in signal.reason

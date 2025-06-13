@@ -6,10 +6,12 @@ our protocol-first architecture and Pydantic philosophy.
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import TypeVar
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
+
+T = TypeVar("T")
 
 
 class RegistryConfig(BaseSettings):
@@ -58,7 +60,7 @@ class IndicatorRegistry(BaseModel):
         """
         return cls()
 
-    def register(self, name: str) -> Callable[[type], type]:
+    def register(self, name: str) -> Callable[[type[T]], type[T]]:
         """
         Register an indicator with this registry instance.
 
@@ -72,7 +74,7 @@ class IndicatorRegistry(BaseModel):
 
         """
 
-        def decorator(indicator_class: type) -> type:
+        def decorator(indicator_class: type[T]) -> type[T]:
             if name in self.config.enabled_indicators:
                 if name in self.indicators:
                     raise ValueError(f"Indicator '{name}' already registered")
@@ -128,7 +130,7 @@ class IndicatorRegistry(BaseModel):
         """Clear all registered indicators (mainly for testing)."""
         self.indicators.clear()
 
-    def create(self, name: str, **kwargs: Any) -> Any:
+    def create(self, name: str, **kwargs: object) -> object:
         """
         Create an indicator instance by name.
 
@@ -159,7 +161,7 @@ def get_default_registry() -> IndicatorRegistry:
     return _default_registry
 
 
-def register(name: str) -> Callable[[type], type]:
+def register(name: str) -> Callable[[type[T]], type[T]]:
     """
     Register an indicator with the default registry.
 

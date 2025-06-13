@@ -11,12 +11,15 @@ This module provides a wrapper around the Coinbase WebSocket client that:
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 from coinbase.websocket import WSClient
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from src.market.model.snapshot import MarketSnapshot
+
+if TYPE_CHECKING:
+    from src.market.adapters.coinbase.stream import CoinbaseStreamHandler
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,7 @@ class ResilientWSClient:
         self.client: WSClient | None = None
         self.is_running = False
         self.reconnect_task: asyncio.Task[None] | None = None
-        self._handler: Any = None  # Will be CoinbaseStreamHandler
+        self._handler: CoinbaseStreamHandler | None = None
 
     def start(self) -> None:
         """Start the resilient WebSocket connection."""

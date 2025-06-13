@@ -11,7 +11,8 @@ from src.market.analysis.models import (
 )
 from src.market.analysis.pipeline import AnalysisPipeline
 from src.market.model.snapshot import MarketSnapshot
-from src.market.protocols import MarketTradeProtocol
+from src.market.model.ticker import MarketTicker
+from src.market.model.trade import MarketTrade
 from tests.unit.app.market.helpers import OrderBookBuilder, TickerBuilder, TradeBuilder
 
 
@@ -24,7 +25,16 @@ class TestAnalysisPipeline:
         pipeline = AnalysisPipeline(history_minutes=5)
 
         # And: A complete market snapshot
-        ticker = TickerBuilder().with_price("50000.00").build()
+        ticker_data = TickerBuilder().with_price("50000.00").build()
+        # Convert to domain model
+        ticker = MarketTicker(
+            symbol=ticker_data.symbol,
+            price=ticker_data.price,
+            bid=ticker_data.bid,
+            ask=ticker_data.ask,
+            volume=ticker_data.volume,
+            timestamp=ticker_data.timestamp,
+        )
 
         order_book = (
             OrderBookBuilder()
@@ -35,10 +45,22 @@ class TestAnalysisPipeline:
             .build()
         )
 
-        trades: list[MarketTradeProtocol] = [
+        trade_data_list = [
             TradeBuilder().with_price("50000").with_side("BUY").build(),
             TradeBuilder().with_price("49999").with_side("BUY").build(),
             TradeBuilder().with_price("50001").with_side("SELL").build(),
+        ]
+        # Convert to domain models
+        trades = [
+            MarketTrade(
+                symbol=td.symbol,
+                price=td.price,
+                size=td.size,
+                side=td.side,
+                timestamp=td.timestamp,
+                trade_id=td.trade_id,
+            )
+            for td in trade_data_list
         ]
 
         snapshot = MarketSnapshot(
@@ -71,7 +93,16 @@ class TestAnalysisPipeline:
 
         # When: Processing multiple snapshots
         for i in range(5):
-            ticker = TickerBuilder().with_price(f"{50000 + i * 10}").build()
+            ticker_data = TickerBuilder().with_price(f"{50000 + i * 10}").build()
+            # Convert to domain model
+            ticker = MarketTicker(
+                symbol=ticker_data.symbol,
+                price=ticker_data.price,
+                bid=ticker_data.bid,
+                ask=ticker_data.ask,
+                volume=ticker_data.volume,
+                timestamp=ticker_data.timestamp,
+            )
             snapshot = MarketSnapshot(
                 symbol="BTC-USD",
                 timestamp=datetime.now(UTC),
@@ -106,7 +137,7 @@ class TestAnalysisPipeline:
     def test_trade_flow_analysis_calculation(self) -> None:
         """Test trade flow analysis calculations."""
         # Given: A snapshot with trades
-        trades: list[MarketTradeProtocol] = [
+        trade_data_list = [
             TradeBuilder()
             .with_price("50000")
             .with_size("1.0")
@@ -122,6 +153,18 @@ class TestAnalysisPipeline:
             .with_size("1.0")
             .with_side("SELL")
             .build(),
+        ]
+        # Convert to domain models
+        trades = [
+            MarketTrade(
+                symbol=td.symbol,
+                price=td.price,
+                size=td.size,
+                side=td.side,
+                timestamp=td.timestamp,
+                trade_id=td.trade_id,
+            )
+            for td in trade_data_list
         ]
 
         snapshot = MarketSnapshot(

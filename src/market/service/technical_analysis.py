@@ -8,7 +8,6 @@ batch processing, and integration with the indicator registry.
 import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import pandas as pd
 
@@ -284,19 +283,18 @@ class TechnicalAnalysisService:
 
         try:
             # Calculate indicator
-            # We use Any here because from_price_series is implementation-specific
-            indicator_class_any: Any = indicator_class
+            # We cast here because from_price_series is implementation-specific
             indicator: BaseIndicator
 
             if indicator_name == "rsi":
-                indicator = indicator_class_any.from_price_series(
+                indicator = indicator_class.from_price_series(  # type: ignore
                     prices=prices,
                     symbol=symbol,
                     timestamp=timestamp,
                     period=self.indicator_config.rsi_period,
                 )
             elif indicator_name == "macd":
-                indicator = indicator_class_any.from_price_series(
+                indicator = indicator_class.from_price_series(  # type: ignore
                     prices=prices,
                     symbol=symbol,
                     timestamp=timestamp,
@@ -305,7 +303,7 @@ class TechnicalAnalysisService:
                     signal_period=self.indicator_config.macd_signal_period,
                 )
             elif indicator_name == "stochastic":
-                indicator = indicator_class_any.from_price_series(
+                indicator = indicator_class.from_price_series(  # type: ignore
                     prices=prices,
                     symbol=symbol,
                     timestamp=timestamp,
@@ -323,7 +321,7 @@ class TechnicalAnalysisService:
                 prices = prices.iloc[-min_len:]
                 volumes = volumes.iloc[-min_len:]
 
-                indicator = indicator_class_any.from_price_volume_series(
+                indicator = indicator_class.from_price_volume_series(  # type: ignore
                     prices=prices,
                     volumes=volumes,
                     symbol=symbol,
@@ -333,7 +331,7 @@ class TechnicalAnalysisService:
                 )
             else:
                 # Generic creation for other indicators
-                indicator = indicator_class_any.from_price_series(
+                indicator = indicator_class.from_price_series(  # type: ignore
                     prices=prices,
                     symbol=symbol,
                     timestamp=timestamp,

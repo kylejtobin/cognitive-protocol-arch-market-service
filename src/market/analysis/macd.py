@@ -1,17 +1,26 @@
 """
-MACD (Moving Average Convergence Divergence) indicator.
+MACD (Moving Average Convergence Divergence) indicator implementation.
 
-This module provides the MACD momentum indicator for trend analysis.
-MACD shows the relationship between two moving averages of prices.
+This module provides a Pydantic-based MACD implementation that:
+- Calculates MACD line, signal line, and histogram
+- Provides semantic interpretations of trends
+- Identifies crossovers and divergences
+- Offers agent-friendly summaries with typed contexts
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 import pandas as pd
 from pydantic import Field, ValidationInfo, field_validator
 
 from src.market.analysis.base import BaseIndicator
+from src.market.analysis.contexts import (
+    MACDAgentContext,
+    MACDSignals,
+    MACDValues,
+    SignalSuggestion,
+)
 from src.market.analysis.registry import register
 
 
@@ -20,44 +29,48 @@ class MACDAnalysis(BaseIndicator):
     """
     MACD (Moving Average Convergence Divergence) analysis.
 
-    MACD is calculated by subtracting the 26-period EMA from the 12-period EMA.
-    A 9-period EMA of the MACD (signal line) is then plotted on top.
-
-    Signals:
-    - MACD crosses above signal: Bullish signal
-    - MACD crosses below signal: Bearish signal
-    - Divergence from price: Potential reversal
+    MACD is a trend-following momentum indicator that shows the relationship
+    between two moving averages of prices. It consists of:
+    - MACD Line: 12-day EMA - 26-day EMA
+    - Signal Line: 9-day EMA of MACD Line
+    - Histogram: MACD Line - Signal Line
     """
 
-    # Configuration
+    # MACD parameters
     fast_period: int = Field(default=12, ge=2, le=50)
-    slow_period: int = Field(default=26, ge=10, le=100)
+    slow_period: int = Field(default=26, ge=5, le=200)
     signal_period: int = Field(default=9, ge=2, le=50)
 
-    # MACD values
-    macd_line: float = Field(description="MACD line value (fast EMA - slow EMA)")
-    signal_line: float = Field(description="Signal line value (EMA of MACD)")
-    histogram: float = Field(description="MACD histogram (MACD - Signal)")
+    # Calculated values
+    macd_value: float = Field(description="MACD line value")
+    signal_value: float = Field(description="Signal line value")
+    histogram_value: float = Field(description="Histogram value")
+
+    # Previous values for trend detection (optional)
+    prev_macd: float | None = Field(default=None)
+    prev_signal: float | None = Field(default=None)
+    prev_histogram: float | None = Field(default=None)
 
     # Semantic interpretations
-    trend_state: Literal["bullish", "bearish", "neutral"]
-    trend_strength: Literal["strong", "moderate", "weak"]
+    trend: Literal["bullish", "bearish", "neutral"]
+    momentum: Literal["increasing", "decreasing", "stable"]
+    signal_position: Literal["above_signal", "below_signal", "at_signal"]
+    histogram_trend: Literal["expanding", "contracting", "neutral"]
+
+    # Crossover detection
     crossover_detected: bool = Field(default=False)
     crossover_type: Literal["bullish", "bearish", "none"] = Field(default="none")
 
-    # Divergence detection
-    divergence_detected: bool = Field(default=False)
-    divergence_type: Literal["bullish", "bearish", "none"] = Field(default="none")
+    # Zero line analysis
+    above_zero: bool = Field(description="Whether MACD is above zero line")
+    zero_cross: Literal["bullish", "bearish", "none"] = Field(default="none")
 
     @field_validator("slow_period")
     @classmethod
-    def validate_slow_period(cls, v: int, info: ValidationInfo) -> int:
+    def validate_slow_greater_than_fast(cls, v: int, info: ValidationInfo) -> int:
         """Ensure slow period is greater than fast period."""
-        fast = info.data.get("fast_period", 12)
-        if v <= fast:
-            raise ValueError(
-                f"Slow period ({v}) must be greater than fast period ({fast})"
-            )
+        if "fast_period" in info.data and v <= info.data["fast_period"]:
+            raise ValueError("Slow period must be greater than fast period")
         return v
 
     @classmethod
@@ -69,7 +82,6 @@ class MACDAnalysis(BaseIndicator):
         fast_period: int = 12,
         slow_period: int = 26,
         signal_period: int = 9,
-        check_divergence: bool = False,
     ) -> "MACDAnalysis":
         """
         Calculate MACD from a price series.
@@ -81,7 +93,6 @@ class MACDAnalysis(BaseIndicator):
             fast_period: Fast EMA period (default: 12)
             slow_period: Slow EMA period (default: 26)
             signal_period: Signal EMA period (default: 9)
-            check_divergence: Whether to check for divergence
 
         Returns:
             MACDAnalysis instance with calculations
@@ -102,36 +113,45 @@ class MACDAnalysis(BaseIndicator):
         ema_slow = prices.ewm(span=slow_period, adjust=False).mean()
 
         # Calculate MACD line
-        macd = ema_fast - ema_slow
+        macd_line = ema_fast - ema_slow
 
         # Calculate signal line (EMA of MACD)
-        signal = macd.ewm(span=signal_period, adjust=False).mean()
+        signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
 
         # Calculate histogram
-        histogram = macd - signal
+        histogram = macd_line - signal_line
 
-        # Get current values
-        current_macd = float(macd.iloc[-1])
-        current_signal = float(signal.iloc[-1])
+        # Get current and previous values
+        current_macd = float(macd_line.iloc[-1])
+        current_signal = float(signal_line.iloc[-1])
         current_histogram = float(histogram.iloc[-1])
 
-        # Check for crossover in recent data
-        crossover_detected, crossover_type = cls._check_crossover(
-            macd.tail(3), signal.tail(3)
+        # Previous values for trend detection
+        prev_macd = float(macd_line.iloc[-2]) if len(macd_line) > 1 else None
+        prev_signal = float(signal_line.iloc[-2]) if len(signal_line) > 1 else None
+        prev_histogram = float(histogram.iloc[-2]) if len(histogram) > 1 else None
+
+        # Determine trends and crossovers
+        trend = cls._determine_trend(current_macd, current_histogram)
+        momentum = cls._determine_momentum(
+            current_histogram, prev_histogram if prev_histogram else current_histogram
+        )
+        signal_position = cls._determine_signal_position(current_macd, current_signal)
+        histogram_trend = cls._determine_histogram_trend(
+            current_histogram, prev_histogram if prev_histogram else current_histogram
         )
 
-        # Determine trend state and strength
-        trend_state = cls._determine_trend_state(current_macd, current_histogram)
-        trend_strength = cls._determine_trend_strength(current_histogram, histogram)
-
-        # Check for divergence if requested
-        divergence_detected = False
-        divergence_type: Literal["bullish", "bearish", "none"] = "none"
-
-        if check_divergence and len(prices) >= slow_period * 2:
-            divergence_detected, divergence_type = cls._check_divergence(
-                prices, macd, slow_period
+        # Check for crossovers
+        crossover_detected = False
+        crossover_type: Literal["bullish", "bearish", "none"] = "none"
+        if prev_macd is not None and prev_signal is not None:
+            crossover_detected, crossover_type = cls._check_crossover(
+                current_macd, current_signal, prev_macd, prev_signal
             )
+
+        # Check zero line
+        above_zero = current_macd > 0
+        zero_cross = cls._check_zero_cross(current_macd, prev_macd)
 
         return cls(
             symbol=symbol,
@@ -139,42 +159,27 @@ class MACDAnalysis(BaseIndicator):
             fast_period=fast_period,
             slow_period=slow_period,
             signal_period=signal_period,
-            macd_line=current_macd,
-            signal_line=current_signal,
-            histogram=current_histogram,
-            trend_state=trend_state,
-            trend_strength=trend_strength,
+            macd_value=current_macd,
+            signal_value=current_signal,
+            histogram_value=current_histogram,
+            prev_macd=prev_macd,
+            prev_signal=prev_signal,
+            prev_histogram=prev_histogram,
+            trend=trend,
+            momentum=momentum,
+            signal_position=signal_position,
+            histogram_trend=histogram_trend,
             crossover_detected=crossover_detected,
             crossover_type=crossover_type,
-            divergence_detected=divergence_detected,
-            divergence_type=divergence_type,
+            above_zero=above_zero,
+            zero_cross=zero_cross,
         )
 
     @staticmethod
-    def _check_crossover(
-        macd: pd.Series, signal: pd.Series
-    ) -> tuple[bool, Literal["bullish", "bearish", "none"]]:
-        """Check for MACD/Signal line crossover."""
-        if len(macd) < 2 or len(signal) < 2:
-            return False, "none"
-
-        # Previous and current positions
-        prev_diff = float(macd.iloc[-2] - signal.iloc[-2])
-        curr_diff = float(macd.iloc[-1] - signal.iloc[-1])
-
-        # Check for crossover
-        if prev_diff <= 0 < curr_diff:
-            return True, "bullish"
-        elif prev_diff >= 0 > curr_diff:
-            return True, "bearish"
-        else:
-            return False, "none"
-
-    @staticmethod
-    def _determine_trend_state(
+    def _determine_trend(
         macd: float, histogram: float
     ) -> Literal["bullish", "bearish", "neutral"]:
-        """Determine trend state from MACD values."""
+        """Determine overall trend based on MACD and histogram."""
         if macd > 0 and histogram > 0:
             return "bullish"
         elif macd < 0 and histogram < 0:
@@ -183,208 +188,190 @@ class MACDAnalysis(BaseIndicator):
             return "neutral"
 
     @staticmethod
-    def _determine_trend_strength(
-        current_histogram: float, histogram_series: pd.Series
-    ) -> Literal["strong", "moderate", "weak"]:
-        """Determine trend strength from histogram."""
-        # Use recent histogram values for strength assessment
-        recent_histogram = histogram_series.tail(10)
-        avg_histogram = float(recent_histogram.abs().mean())
-
-        if abs(current_histogram) > avg_histogram * 1.5:
-            return "strong"
-        elif abs(current_histogram) > avg_histogram * 0.5:
-            return "moderate"
+    def _determine_momentum(
+        current_hist: float, prev_hist: float
+    ) -> Literal["increasing", "decreasing", "stable"]:
+        """Determine momentum based on histogram changes."""
+        diff = abs(current_hist - prev_hist)
+        if diff < 0.01:  # Threshold for considering stable
+            return "stable"
+        elif abs(current_hist) > abs(prev_hist):
+            return "increasing"
         else:
-            return "weak"
+            return "decreasing"
 
     @staticmethod
-    def _check_divergence(
-        prices: pd.Series, macd: pd.Series, period: int
+    def _determine_signal_position(
+        macd: float, signal: float
+    ) -> Literal["above_signal", "below_signal", "at_signal"]:
+        """Determine MACD position relative to signal line."""
+        diff = abs(macd - signal)
+        if diff < 0.01:  # Threshold for considering equal
+            return "at_signal"
+        elif macd > signal:
+            return "above_signal"
+        else:
+            return "below_signal"
+
+    @staticmethod
+    def _determine_histogram_trend(
+        current: float, previous: float
+    ) -> Literal["expanding", "contracting", "neutral"]:
+        """Determine if histogram is expanding or contracting."""
+        if abs(current) > abs(previous) * 1.1:  # 10% threshold
+            return "expanding"
+        elif abs(current) < abs(previous) * 0.9:
+            return "contracting"
+        else:
+            return "neutral"
+
+    @staticmethod
+    def _check_crossover(
+        current_macd: float,
+        current_signal: float,
+        prev_macd: float,
+        prev_signal: float,
     ) -> tuple[bool, Literal["bullish", "bearish", "none"]]:
-        """
-        Check for price/MACD divergence.
+        """Check for MACD/Signal line crossover."""
+        # Previous: MACD below signal, Current: MACD above signal = Bullish
+        if prev_macd <= prev_signal and current_macd > current_signal:
+            return True, "bullish"
+        # Previous: MACD above signal, Current: MACD below signal = Bearish
+        elif prev_macd >= prev_signal and current_macd < current_signal:
+            return True, "bearish"
+        else:
+            return False, "none"
 
-        Bullish divergence: Price makes lower low, MACD makes higher low
-        Bearish divergence: Price makes higher high, MACD makes lower high
-        """
-        recent_prices = prices.tail(period)
-        recent_macd = macd.tail(period)
-
-        # Find peaks and troughs
-        price_peaks = []
-        macd_peaks = []
-
-        for i in range(1, len(recent_prices) - 1):
-            # Price peaks
-            if (
-                recent_prices.iloc[i] > recent_prices.iloc[i - 1]
-                and recent_prices.iloc[i] > recent_prices.iloc[i + 1]
-            ):
-                price_peaks.append(i)
-
-            # MACD peaks
-            if (
-                recent_macd.iloc[i] > recent_macd.iloc[i - 1]
-                and recent_macd.iloc[i] > recent_macd.iloc[i + 1]
-            ):
-                macd_peaks.append(i)
-
-        # Check for divergence patterns
-        if len(price_peaks) >= 2 and len(macd_peaks) >= 2:
-            # Bearish divergence: higher price high, lower MACD high
-            if (
-                recent_prices.iloc[price_peaks[-1]]
-                > recent_prices.iloc[price_peaks[-2]]
-                and recent_macd.iloc[macd_peaks[-1]] < recent_macd.iloc[macd_peaks[-2]]
-            ):
-                return True, "bearish"
-
-        # Similar check for bullish divergence (lower lows)
-        price_troughs = []
-        macd_troughs = []
-
-        for i in range(1, len(recent_prices) - 1):
-            if (
-                recent_prices.iloc[i] < recent_prices.iloc[i - 1]
-                and recent_prices.iloc[i] < recent_prices.iloc[i + 1]
-            ):
-                price_troughs.append(i)
-
-            if (
-                recent_macd.iloc[i] < recent_macd.iloc[i - 1]
-                and recent_macd.iloc[i] < recent_macd.iloc[i + 1]
-            ):
-                macd_troughs.append(i)
-
-        if len(price_troughs) >= 2 and len(macd_troughs) >= 2:
-            # Bullish divergence: lower price low, higher MACD low
-            if (
-                recent_prices.iloc[price_troughs[-1]]
-                < recent_prices.iloc[price_troughs[-2]]
-                and recent_macd.iloc[macd_troughs[-1]]
-                > recent_macd.iloc[macd_troughs[-2]]
-            ):
-                return True, "bullish"
-
-        return False, "none"
+    @staticmethod
+    def _check_zero_cross(
+        current: float, previous: float | None
+    ) -> Literal["bullish", "bearish", "none"]:
+        """Check for zero line crossover."""
+        if previous is None:
+            return "none"
+        # Crossed above zero
+        if previous <= 0 and current > 0:
+            return "bullish"
+        # Crossed below zero
+        elif previous >= 0 and current < 0:
+            return "bearish"
+        else:
+            return "none"
 
     def semantic_summary(self) -> str:
-        """Generate one-line summary for agent prompts."""
-        state = self.trend_state.title()
+        """Generate one-line summary for logging."""
+        trend_str = self.trend.title()
+        position_str = self.signal_position.replace("_", " ")
+
+        summary = f"{trend_str} trend, MACD {position_str}"
 
         if self.crossover_detected:
-            summary = f"MACD {self.crossover_type} crossover - {state} trend"
-        else:
-            summary = f"MACD {state} ({self.trend_strength})"
-
-        if self.histogram > 0:
-            summary += f" momentum increasing ({self.histogram:.3f})"
-        else:
-            summary += f" momentum decreasing ({self.histogram:.3f})"
-
-        if self.divergence_detected:
-            summary += f" with {self.divergence_type} divergence"
+            summary += f" ({self.crossover_type} crossover)"
+        elif self.histogram_trend == "expanding":
+            summary += " (momentum expanding)"
+        elif self.histogram_trend == "contracting":
+            summary += " (momentum contracting)"
 
         return summary
 
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> MACDAgentContext:
         """Format analysis for agent consumption."""
-        return {
-            "indicator": "macd",
-            "values": {
-                "macd": round(self.macd_line, 4),
-                "signal": round(self.signal_line, 4),
-                "histogram": round(self.histogram, 4),
-            },
-            "state": self.trend_state,
-            "strength": self.trend_strength,
-            "signals": {
-                "crossover": self.crossover_type if self.crossover_detected else None,
-                "divergence": self.divergence_type
-                if self.divergence_detected
-                else None,
-                "histogram_direction": "positive" if self.histogram > 0 else "negative",
-            },
-            "interpretation": self._generate_interpretation(),
-        }
+        interpretation = self._generate_interpretation()
+
+        return MACDAgentContext(
+            values=MACDValues(
+                macd=self.macd_value,
+                signal=self.signal_value,
+                histogram=self.histogram_value,
+            ),
+            trend=self.trend,
+            momentum=self.momentum,
+            signals=MACDSignals(
+                histogram_trend=self.histogram_trend,
+                signal_position=self.signal_position,
+                zero_cross=self.zero_cross,
+            ),
+            interpretation=interpretation,
+        )
 
     def _generate_interpretation(self) -> str:
         """Generate detailed interpretation for agents."""
         if self.crossover_detected:
             if self.crossover_type == "bullish":
                 return (
-                    "MACD bullish crossover detected. Momentum shifting to upside. "
-                    "Consider long positions or adding to existing longs. "
-                    "Confirm with price action and volume."
+                    "MACD bullish crossover detected. "
+                    "Momentum shifting to the upside. "
+                    "Consider long positions on confirmation."
                 )
             else:
                 return (
-                    "MACD bearish crossover detected. Momentum shifting to downside. "
-                    "Consider reducing long exposure or initiating shorts. "
-                    "Watch for support levels."
+                    "MACD bearish crossover detected. "
+                    "Momentum shifting to the downside. "
+                    "Consider reducing long exposure."
                 )
-        elif self.divergence_detected:
-            if self.divergence_type == "bullish":
-                return (
-                    "Bullish divergence detected between price and MACD. "
-                    "Potential bottom forming despite lower prices. "
-                    "Watch for reversal confirmation."
-                )
-            else:
-                return (
-                    "Bearish divergence detected between price and MACD. "
-                    "Momentum weakening despite higher prices. "
-                    "Potential top forming, consider taking profits."
-                )
-        elif self.trend_state == "bullish" and self.trend_strength == "strong":
+        elif self.trend == "bullish" and self.histogram_trend == "expanding":
             return (
-                "Strong bullish momentum confirmed by MACD. "
-                "Trend favors continuation higher. "
-                "Use pullbacks to MACD line as entry opportunities."
+                "Strong bullish momentum with expanding histogram. "
+                "Trend acceleration in progress. "
+                "Favorable for trend-following longs."
             )
-        elif self.trend_state == "bearish" and self.trend_strength == "strong":
+        elif self.trend == "bearish" and self.histogram_trend == "expanding":
             return (
-                "Strong bearish momentum confirmed by MACD. "
-                "Downtrend likely to continue. "
-                "Rallies to MACD line offer shorting opportunities."
+                "Strong bearish momentum with expanding histogram. "
+                "Downtrend acceleration in progress. "
+                "Avoid long positions."
+            )
+        elif self.histogram_trend == "contracting":
+            return (
+                f"Momentum contracting in {self.trend} trend. "
+                "Potential trend exhaustion or reversal ahead. "
+                "Monitor for directional change."
             )
         else:
             return (
-                f"MACD showing {self.trend_strength} {self.trend_state} momentum. "
-                "No clear directional signal. "
-                "Wait for stronger momentum or crossover signal."
+                f"MACD shows {self.trend} bias with {self.momentum} momentum. "
+                f"Currently {self.signal_position.replace('_', ' ')}. "
+                "No strong directional signal."
             )
 
-    def suggest_signal(self) -> dict[str, str]:
+    def suggest_signal(self) -> SignalSuggestion:
         """Suggest trading signal based on MACD analysis."""
         if self.crossover_detected:
-            return {
-                "bias": self.crossover_type,
-                "strength": "strong" if self.trend_strength == "strong" else "moderate",
-                "reason": f"MACD {self.crossover_type} crossover",
-                "action": "enter_position"
-                if self.trend_strength == "strong"
-                else "await_confirmation",
-            }
-        elif self.divergence_detected:
-            return {
-                "bias": self.divergence_type,
-                "strength": "moderate",
-                "reason": f"{self.divergence_type.title()} divergence detected",
-                "action": "prepare_reversal_trade",
-            }
-        elif self.trend_state != "neutral" and self.trend_strength == "strong":
-            return {
-                "bias": self.trend_state,
-                "strength": "moderate",
-                "reason": f"Strong {self.trend_state} momentum",
-                "action": "follow_trend",
-            }
+            return SignalSuggestion(
+                bias="bullish" if self.crossover_type == "bullish" else "bearish",
+                strength="strong",
+                reason=f"MACD {self.crossover_type} crossover",
+                action="enter_on_confirmation"
+                if self.crossover_type == "bullish"
+                else "exit_longs",
+            )
+        elif self.zero_cross != "none":
+            return SignalSuggestion(
+                bias="bullish" if self.zero_cross == "bullish" else "bearish",
+                strength="moderate",
+                reason=f"MACD crossed {'above' if self.zero_cross == 'bullish' else 'below'} zero",
+                action="prepare_entry"
+                if self.zero_cross == "bullish"
+                else "reduce_risk",
+            )
+        elif self.trend == "bullish" and self.histogram_trend == "expanding":
+            return SignalSuggestion(
+                bias="bullish",
+                strength="moderate",
+                reason="Bullish momentum expanding",
+                action="hold_or_add",
+            )
+        elif self.trend == "bearish" and self.histogram_trend == "expanding":
+            return SignalSuggestion(
+                bias="bearish",
+                strength="moderate",
+                reason="Bearish momentum expanding",
+                action="stay_out_or_short",
+            )
         else:
-            return {
-                "bias": "neutral",
-                "strength": "weak",
-                "reason": "No clear MACD signal",
-                "action": "wait",
-            }
+            return SignalSuggestion(
+                bias="neutral",
+                strength="weak",
+                reason=f"No clear MACD signal, {self.momentum} momentum",
+                action="wait_for_clarity",
+            )

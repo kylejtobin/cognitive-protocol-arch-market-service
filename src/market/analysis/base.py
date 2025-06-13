@@ -7,11 +7,31 @@ and a registry system for dynamic indicator loading.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.market.analysis.contexts import (
+    BaseAgentContext,
+    MACDAgentContext,
+    MomentumAgentContext,
+    RSIAgentContext,
+    SignalSuggestion,
+    StochasticAgentContext,
+    VolumeAgentContext,
+)
+
 T = TypeVar("T", bound="BaseIndicator")
+
+# Union type for all possible agent contexts
+AgentContext = Union[
+    RSIAgentContext,
+    MACDAgentContext,
+    StochasticAgentContext,
+    VolumeAgentContext,
+    MomentumAgentContext,
+    BaseAgentContext,  # Fallback for custom indicators
+]
 
 
 class BaseIndicator(BaseModel, ABC):
@@ -45,34 +65,31 @@ class BaseIndicator(BaseModel, ABC):
         ...
 
     @abstractmethod
-    def to_agent_context(self) -> dict[str, Any]:
+    def to_agent_context(self) -> AgentContext:
         """
         Format indicator data for agent consumption.
 
-        This should provide rich, structured data that agents can use for
-        decision-making. The format should be consistent and include all
-        relevant information.
+        This returns a typed Pydantic model that agents can use for
+        decision-making. The model provides full type safety and validation.
 
         Returns:
-            Dictionary with structured indicator data
+            Typed agent context (specific to each indicator)
 
         Example:
-            {
-                "indicator": "rsi",
-                "value": 75.2,
-                "state": "overbought",
-                "signals": {
-                    "divergence": "bearish",
-                    "trend": "weakening"
-                },
-                "interpretation": "Price is overbought with bearish divergence..."
-            }
+            return RSIAgentContext(
+                value=75.2,
+                state="overbought",
+                strength="strong",
+                key_levels=RSIKeyLevels(current=75.2),
+                signals=RSISignals(is_overbought=True, is_oversold=False),
+                interpretation="RSI indicates overbought conditions..."
+            )
 
         """
         ...
 
     @abstractmethod
-    def suggest_signal(self) -> dict[str, str]:
+    def suggest_signal(self) -> SignalSuggestion:
         """
         Suggest a trading signal based on the indicator state.
 
@@ -80,15 +97,15 @@ class BaseIndicator(BaseModel, ABC):
         Agents are responsible for interpreting these suggestions.
 
         Returns:
-            Dictionary with signal suggestions
+            Typed signal suggestion
 
         Example:
-            {
-                "bias": "bearish",
-                "strength": "moderate",
-                "reason": "RSI overbought with divergence",
-                "action": "consider_reducing_position"
-            }
+            return SignalSuggestion(
+                bias="bearish",
+                strength="moderate",
+                reason="RSI overbought with divergence",
+                action="consider_reducing_position"
+            )
 
         """
         ...

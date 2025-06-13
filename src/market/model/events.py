@@ -10,11 +10,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.market.protocols import (
-    MarketOrderBookProtocol,
-    MarketTickerProtocol,
-    MarketTradeProtocol,
-)
+from src.market.model.book import OrderBook
+from src.market.model.ticker import MarketTicker
+from src.market.model.trade import MarketTrade
 
 
 class MarketDataEvent(BaseModel):
@@ -40,7 +38,7 @@ class TickerUpdateEvent(MarketDataEvent):
     """Ticker price update event."""
 
     event_type: Literal["ticker"] = "ticker"
-    ticker: MarketTickerProtocol = Field(description="The ticker data")
+    ticker: MarketTicker = Field(description="The ticker data")
 
     @property
     def price_change(self) -> float | None:
@@ -58,7 +56,7 @@ class OrderBookUpdateEvent(MarketDataEvent):
     """Order book state update event."""
 
     event_type: Literal["orderbook"] = "orderbook"
-    order_book: MarketOrderBookProtocol = Field(description="The order book data")
+    order_book: OrderBook = Field(description="The order book data")
     update_type: Literal["snapshot", "delta"] = Field(
         default="snapshot",
         description="Whether this is a full snapshot or incremental update",
@@ -83,7 +81,7 @@ class TradeExecutedEvent(MarketDataEvent):
     """Trade execution event."""
 
     event_type: Literal["trade"] = "trade"
-    trade: MarketTradeProtocol = Field(description="The trade data")
+    trade: MarketTrade = Field(description="The trade data")
 
     @property
     def is_large_trade(self) -> bool:
@@ -103,9 +101,9 @@ class MarketSnapshotEvent(MarketDataEvent):
     """Complete market state snapshot event."""
 
     event_type: Literal["snapshot"] = "snapshot"
-    ticker: MarketTickerProtocol | None = None
-    order_book: MarketOrderBookProtocol | None = None
-    recent_trades: list[MarketTradeProtocol] = Field(default_factory=list)
+    ticker: MarketTicker | None = None
+    order_book: OrderBook | None = None
+    recent_trades: list[MarketTrade] = Field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:

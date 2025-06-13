@@ -8,7 +8,7 @@ handling message parsing and state management for market data streaming.
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coinbase.websocket import WSClient
 
@@ -58,30 +58,34 @@ class CoinbaseStreamHandler:
         This is the main entry point called by the WebSocket client.
         """
         try:
+            # Parse JSON to discover channel type
             data = json.loads(msg)
             channel = data.get("channel", "")
 
+            # Route to appropriate typed handler based on channel
             match channel:
                 case "ticker" | "ticker_batch":
-                    self._handle_ticker(data)
+                    self._handle_ticker_message(msg)
                 case "level2" | "l2_data":
-                    self._handle_level2(data)
+                    self._handle_level2_message(msg)
                 case "market_trades":
-                    self._handle_trades(data)
+                    self._handle_trades_message(msg)
                 case "subscriptions" | "heartbeats":
                     # Ignore these channels for now
                     pass
                 case _:
                     if data.get("type") != "error":
                         print(f"Unknown channel: {channel}")
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON message: {e}")
         except Exception as e:
-            print(f"Error handling message: {e}")
-            # Don't crash on bad messages
+            print(f"Error routing message: {e}")
 
-    def _handle_ticker(self, data: dict[str, Any]) -> None:
-        """Handle ticker messages."""
+    def _handle_ticker_message(self, msg: str) -> None:
+        """Handle ticker messages with typed parsing."""
         try:
-            ticker_msg = CoinbaseTicker.model_validate(data)
+            # Parse directly into typed model
+            ticker_msg = CoinbaseTicker.model_validate_json(msg)
 
             for event in ticker_msg.events:
                 for ticker_data in event.tickers:
@@ -102,10 +106,11 @@ class CoinbaseStreamHandler:
         except Exception as e:
             print(f"Error handling ticker: {e}")
 
-    def _handle_level2(self, data: dict[str, Any]) -> None:
-        """Handle level2 order book messages."""
+    def _handle_level2_message(self, msg: str) -> None:
+        """Handle level2 order book messages with typed parsing."""
         try:
-            level2_msg = CoinbaseLevel2.model_validate(data)
+            # Parse directly into typed model
+            level2_msg = CoinbaseLevel2.model_validate_json(msg)
             updated_books = self.book_manager.process_level2_message(level2_msg)
 
             for book in updated_books:
@@ -113,10 +118,11 @@ class CoinbaseStreamHandler:
         except Exception as e:
             print(f"Error handling level2: {e}")
 
-    def _handle_trades(self, data: dict[str, Any]) -> None:
-        """Handle market trades messages."""
+    def _handle_trades_message(self, msg: str) -> None:
+        """Handle market trades messages with typed parsing."""
         try:
-            trades_msg = CoinbaseMarketTrades.model_validate(data)
+            # Parse directly into typed model
+            trades_msg = CoinbaseMarketTrades.model_validate_json(msg)
 
             for event in trades_msg.events:
                 for trade_data in event.trades:

@@ -75,8 +75,8 @@ def test_can_parse_order_book() -> None:
 
 def test_can_create_market_snapshot() -> None:
     """Verify we can create a market snapshot with our components."""
-    # Given: A ticker
-    ticker = TickerData.model_validate(
+    # Given: A ticker data from Coinbase
+    ticker_data = TickerData.model_validate(
         {
             "type": "ticker",
             "product_id": "BTC-USD",
@@ -85,13 +85,25 @@ def test_can_create_market_snapshot() -> None:
         }
     )
 
-    # When: We create a snapshot
+    # When: We create a snapshot with a domain model
     from datetime import datetime
+
+    from src.market.model.ticker import MarketTicker
+
+    # Convert to domain model
+    ticker = MarketTicker(
+        symbol=ticker_data.symbol,
+        price=ticker_data.price,
+        bid=ticker_data.bid,
+        ask=ticker_data.ask,
+        volume=ticker_data.volume,
+        timestamp=ticker_data.timestamp,
+    )
 
     snapshot = MarketSnapshot(
         symbol="BTC-USD",
         timestamp=datetime.now(UTC),
-        ticker=ticker,  # Structural typing works!
+        ticker=ticker,
     )
 
     # Then: It works

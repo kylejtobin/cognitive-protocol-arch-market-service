@@ -15,7 +15,7 @@ Key design principles:
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -26,6 +26,9 @@ from src.market.enums import (
     TradeSide,
 )
 from src.market.model.sequences import SimplePriceLevelSequence
+
+# Type variable for event types
+T = TypeVar("T", bound="CoinbaseBaseEvent")
 
 
 # Base Message Models
@@ -42,7 +45,7 @@ class CoinbaseBaseEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class CoinbaseBaseMessage(BaseModel):
+class CoinbaseBaseMessage(BaseModel, Generic[T]):
     """
     Base message model for all Coinbase WebSocket messages.
 
@@ -54,7 +57,7 @@ class CoinbaseBaseMessage(BaseModel):
     client_id: str = Field(default="")
     timestamp_raw: str = Field(alias="timestamp")
     sequence_num: int
-    events: list[Any]
+    events: list[T]
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -160,14 +163,12 @@ class TickerEvent(CoinbaseBaseEvent):
         return data
 
 
-class CoinbaseTicker(CoinbaseBaseMessage):
+class CoinbaseTicker(CoinbaseBaseMessage[TickerEvent]):
     """
     Model for ticker channel messages.
 
     Contains TickerEvent with TickerData items.
     """
-
-    events: list[TickerEvent]
 
     @property
     def tickers(self) -> Sequence[TickerData]:
@@ -232,14 +233,12 @@ class Level2Event(CoinbaseBaseEvent):
         )
 
 
-class CoinbaseLevel2(CoinbaseBaseMessage):
+class CoinbaseLevel2(CoinbaseBaseMessage[Level2Event]):
     """
     Order book data from Coinbase level2 channel.
 
     Properties satisfy MarketOrderBookProtocol through structural typing.
     """
-
-    events: list[Level2Event]
 
     # Internal cache for processed price levels
     cached_bids: list[tuple[Decimal, Decimal]] = Field(
@@ -456,14 +455,12 @@ class MarketTradesEvent(CoinbaseBaseEvent):
         return data
 
 
-class CoinbaseMarketTrades(CoinbaseBaseMessage):
+class CoinbaseMarketTrades(CoinbaseBaseMessage[MarketTradesEvent]):
     """
     Model for market_trades channel messages.
 
     Contains MarketTradesEvent with TradeData items.
     """
-
-    events: list[MarketTradesEvent]
 
     @property
     def trades(self) -> Sequence[TradeData]:
@@ -497,14 +494,12 @@ class HeartbeatEvent(CoinbaseBaseEvent):
     model_config = ConfigDict(extra="ignore")
 
 
-class CoinbaseHeartbeat(CoinbaseBaseMessage):
+class CoinbaseHeartbeat(CoinbaseBaseMessage[HeartbeatEvent]):
     """
     Heartbeat message from Coinbase.
 
     Used to monitor connection health.
     """
-
-    events: list[HeartbeatEvent]
 
     @property
     def current_time_datetime(self) -> datetime:
@@ -542,10 +537,8 @@ class StatusEvent(CoinbaseBaseEvent):
     model_config = ConfigDict(extra="ignore")
 
 
-class CoinbaseStatus(CoinbaseBaseMessage):
+class CoinbaseStatus(CoinbaseBaseMessage[StatusEvent]):
     """Status message from Coinbase."""
-
-    events: list[StatusEvent]
 
     @property
     def status_value(self) -> str:
@@ -556,7 +549,7 @@ class CoinbaseStatus(CoinbaseBaseMessage):
 
 
 # Subscriptions Channel Models
-class SubscriptionData(BaseModel):
+class SubscriptionData(CoinbaseBaseEvent):
     """Current subscription state."""
 
     subscriptions: dict[str, list[str]]
@@ -564,10 +557,8 @@ class SubscriptionData(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class CoinbaseSubscription(CoinbaseBaseMessage):
+class CoinbaseSubscription(CoinbaseBaseMessage[SubscriptionData]):
     """Subscription state message from Coinbase."""
-
-    events: list[SubscriptionData]
 
     @property
     def subscriptions_map(self) -> dict[str, list[str]]:
