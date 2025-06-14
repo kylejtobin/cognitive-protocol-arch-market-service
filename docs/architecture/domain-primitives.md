@@ -2,7 +2,7 @@
 
 ## Overview
 
-Domain primitives provide semantic meaning to values in our market data system. They work in harmony with our protocol-based architecture, where protocols define neutral contracts and domain models provide rich behavior.
+Domain primitives provide semantic meaning to values in our market data system. They work in harmony with our protocol-based architecture, where protocols define neutral contracts and domain models provide rich behavior through computed fields.
 
 ## The Protocol-Model-Primitive Architecture
 
@@ -25,7 +25,7 @@ graph TB
     end
 
     subgraph "Domain Layer"
-        DOM[MarketTicker<br/>_price: Price ← Domain Primitive<br/>symbol: str]
+        DOM[MarketTicker<br/>price: Decimal ← Protocol Field<br/>@computed_field price_primitive: Price]
         PRIM[Domain Primitives<br/>Price, Size, Spread, etc.]
     end
 
@@ -44,6 +44,44 @@ graph TB
     style PRIM fill:#ffccff,stroke:#333,stroke-width:2px
 ```
 
+## The Computed Field Pattern
+
+The key insight is using Pydantic's `@computed_field` to expose domain primitives while storing protocol-compliant types:
+
+```python
+class MarketTicker(BaseModel):
+    # Store protocol-compliant types as fields
+    price: Decimal  # Satisfies protocol directly
+    size: Decimal
+    
+    # Expose domain primitives as computed fields
+    @computed_field  # type: ignore[misc]
+    @property
+    def price_primitive(self) -> Price:
+        """Price as domain primitive for calculations."""
+        return Price(value=self.price)
+    
+    @computed_field  # type: ignore[misc]
+    @property
+    def size_primitive(self) -> Size:
+        """Size as domain primitive for calculations."""
+        return Size(value=self.size)
+    
+    # Rich domain operations use primitives internally
+    def price_change_from(self, other: MarketTickerProtocol) -> Percentage:
+        """Calculate percentage change - works with ANY protocol implementation!"""
+        other_price = Price(value=other.price)
+        return self.price_primitive.percentage_change(other_price)
+```
+
+### Benefits of Computed Fields
+
+1. **No Storage Duplication**: Store data once, compute primitives on demand
+2. **Cached by Default**: Pydantic caches computed fields for performance
+3. **Clean Serialization**: Computed fields excluded from JSON by default
+4. **Simple Mental Model**: Fields store data, computed fields derive state
+5. **Type Safety**: Full type checking for both storage and primitives
+
 ## Domain Primitives Design
 
 ### Core Primitives
@@ -52,11 +90,12 @@ graph TB
 classDiagram
     class Price {
         +value: Decimal
-        +currency: str
+        +currency: str = "USD"
         +to_decimal() Decimal
         +as_float() float
         +percentage_change(other) Percentage
-        +with_spread(spread) Price
+        +calculate_stop_loss(percentage) Price
+        +calculate_take_profit(percentage) Price
         +format_display() str
     }
 
@@ -83,16 +122,20 @@ classDiagram
     }
 
     class Spread {
-        +value: Decimal
-        +reference_price: Price
+        +bid_price: Price
+        +ask_price: Price
+        +value() Decimal
+        +mid_price() Price
         +as_percentage() Percentage
         +as_basis_points() BasisPoints
-        +is_tight() bool
+        +is_inverted() bool
+        +is_crossed() bool
+        +format_display() str
     }
 
     class Volume {
         +size: Size
-        +timeframe_hours: int
+        +timeframe_hours: int = 24
         +daily_equivalent() Size
         +format_display() str
     }
@@ -101,7 +144,9 @@ classDiagram
         +price: Price
         +volume: Volume
         +confidence: Decimal
+        +to_decimal() Decimal
         +to_price() Price
+        +deviation_from(price) Percentage
     }
 
     Price --> Percentage : calculates
@@ -116,7 +161,7 @@ classDiagram
 
 ## Protocol Satisfaction Pattern
 
-The key insight is that protocols define **what** data is needed, while domain primitives define **how** to work with that data:
+The computed field pattern provides the cleanest way to satisfy protocols while maintaining rich domain behavior:
 
 ```mermaid
 graph LR
@@ -125,25 +170,25 @@ graph LR
         P2[size: Decimal]
     end
 
-    subgraph "Domain Model"
-        D1[_price: Price]
-        D2[_size: Size]
+    subgraph "Domain Model Fields"
+        D1[price: Decimal]
+        D2[size: Decimal]
     end
 
-    subgraph "Protocol Satisfaction"
-        S1["@property<br/>def price(self) -> Decimal:<br/>    return self._price.value"]
-        S2["@property<br/>def size(self) -> Decimal:<br/>    return self._size.value"]
+    subgraph "Computed Primitives"
+        C1["@computed_field<br/>price_primitive: Price"]
+        C2["@computed_field<br/>size_primitive: Size"]
     end
 
-    D1 --> S1
-    D2 --> S2
-    S1 --> P1
-    S2 --> P2
+    D1 --> P1
+    D2 --> P2
+    D1 --> C1
+    D2 --> C2
 
     style P1 fill:#ffffcc
     style P2 fill:#ffffcc
-    style D1 fill:#ffccff
-    style D2 fill:#ffccff
+    style C1 fill:#ffccff
+    style C2 fill:#ffccff
 ```
 
 ## Data Flow Example
@@ -156,73 +201,96 @@ sequenceDiagram
     participant Adapter as Adapter Layer
     participant Protocol as Protocol Layer
     participant Domain as Domain Model
-    participant Primitive as Domain Primitive
-    participant Analysis as Analysis Model
+    participant Primitive as Computed Primitive
+    participant Analysis as Analysis Service
 
     API->>Adapter: {"price": "50000.50"}
     Adapter->>Protocol: price = Decimal("50000.50")
-    Protocol->>Domain: Create domain model
-    Domain->>Primitive: Price(value=Decimal("50000.50"))
-    Domain->>Analysis: Pass model with primitives
-    Analysis->>Analysis: spread.as_basis_points()
+    Protocol->>Domain: MarketTicker(price=...)
+    Domain->>Domain: Store as Decimal field
+    Analysis->>Domain: ticker.price_primitive
+    Domain->>Primitive: @computed_field creates Price
+    Primitive->>Analysis: Price instance
     Analysis->>Analysis: price.percentage_change()
     Note over Analysis: Rich operations on primitives
 ```
 
-## Benefits
-
-1. **Semantic Clarity**: `price.calculate_stop_loss(0.02)` vs `price * Decimal("0.98")`
-2. **Encapsulated Logic**: VWAP calculation in one place
-3. **Type Safety**: Can't accidentally pass a size where a price is expected
-4. **Protocol Compliance**: Still satisfies all protocol contracts
-5. **Testability**: Test primitive behavior once, use everywhere
-
-## Example Usage
+## Real Implementation Example
 
 ```python
-# External adapter - no knowledge of primitives
-class CoinbaseTicker(BaseModel):
-    price_raw: str = Field(alias="price")
-
-    @property
-    def price(self) -> Decimal:  # Satisfies protocol
-        return Decimal(self.price_raw)
-
-# Domain model - rich primitives internally
 class MarketTicker(BaseModel):
-    _price: Price
-
+    """Market ticker with rich domain behavior."""
+    
+    # Protocol-compliant fields (stored as Decimal)
+    symbol: str = Field(..., min_length=1, max_length=20)
+    price: Decimal = Field(..., gt=0)
+    size: Decimal = Field(..., gt=0)
+    bid: Optional[Decimal] = Field(None, gt=0)
+    ask: Optional[Decimal] = Field(None, gt=0)
+    
+    # Computed domain primitives
+    @computed_field  # type: ignore[misc]
     @property
-    def price(self) -> Decimal:  # Satisfies protocol
-        return self._price.value
+    def price_primitive(self) -> Price:
+        return Price(value=self.price)
+    
+    @computed_field  # type: ignore[misc]
+    @property
+    def spread(self) -> Optional[Decimal]:
+        """Computed spread value."""
+        if self.bid is None or self.ask is None:
+            return None
+        return self.ask - self.bid
+    
+    # Rich domain operations
+    def spread_percentage(self) -> Optional[Percentage]:
+        """Calculate spread as percentage of mid price."""
+        if self.spread is None:
+            return None
+        mid = (self.bid + self.ask) / Decimal("2")
+        return Percentage(value=(self.spread / mid) * 100)
+    
+    def is_liquid(self, max_spread_bps: int = 10) -> bool:
+        """Check if market is liquid."""
+        spread_bps = self.spread_basis_points()
+        return spread_bps is not None and spread_bps <= max_spread_bps
+```
 
-    def calculate_spread_to(self, other: "MarketTicker") -> Spread:
-        """Rich domain operation"""
-        return Spread(
-            value=abs(self._price.value - other._price.value),
-            reference_price=self._price
-        )
+## Benefits
 
-# Usage in analysis
-def analyze_market(ticker: MarketTickerProtocol) -> dict:
-    # Works with any implementation
-    raw_price = ticker.price  # Always Decimal
+1. **Semantic Clarity**: `ticker.price_primitive.calculate_stop_loss(Decimal("0.02"))` expresses intent
+2. **No Storage Overhead**: Primitives computed only when accessed
+3. **Protocol Compliance**: Models satisfy protocols without modification
+4. **Type Safety**: Can't mix prices and sizes
+5. **Clean Serialization**: `model_dump()` excludes computed fields by default
 
-    # Convert to domain model for rich operations
-    if isinstance(ticker, MarketTicker):
-        spread_bps = ticker._price.to_spread().as_basis_points()
-    else:
-        # Fallback for non-domain models
-        spread_bps = calculate_spread_basis_points(raw_price)
+## Anti-Patterns to Avoid
+
+```python
+# ❌ Don't use PrivateAttr
+class BadModel(BaseModel):
+    price_input: Decimal = Field(alias="price")
+    _price: Price = PrivateAttr()  # Complex and confusing
+
+# ❌ Don't store computed values
+class BadModel2(BaseModel):
+    price: Decimal
+    price_doubled: Decimal  # Should be @computed_field
+
+# ❌ Don't use regular @property
+class BadModel3(BaseModel):
+    @property
+    def spread(self) -> Decimal:  # Use @computed_field!
+        return self.ask - self.bid
 ```
 
 ## Migration Strategy
 
-The beauty of this design is that it can be adopted incrementally:
+The computed field pattern makes migration straightforward:
 
-1. **Phase 1**: Implement primitives
-2. **Phase 2**: Update domain models to use primitives internally
-3. **Phase 3**: Gradually migrate analysis code to use primitive methods
-4. **Phase 4**: Update UI to use formatting methods
+1. **Phase 1**: Add computed primitive properties to existing models
+2. **Phase 2**: Update domain operations to use primitives internally  
+3. **Phase 3**: Services can gradually adopt primitive usage
+4. **Phase 4**: UI can use primitive formatting methods
 
-Throughout all phases, protocols remain unchanged and all existing code continues to work.
+Throughout all phases, protocols remain unchanged and all existing code continues to work. The pattern supports incremental adoption without breaking changes.

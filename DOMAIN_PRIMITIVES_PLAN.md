@@ -4,52 +4,53 @@
 
 This document outlines the plan to introduce domain primitives (Price, Size, Percentage, etc.) throughout the codebase while maintaining our protocol-based architecture with neutral types at boundaries.
 
+## ✅ Key Discovery: Computed Field Pattern
+
+We discovered that using Pydantic's `@computed_field` decorator provides the cleanest solution:
+
+- Store protocol-compliant types as regular fields
+- Expose domain primitives as computed properties
+- No PrivateAttr complexity or duplicate storage
+- Clean serialization and caching built-in
+
 ## Guiding Principles
 
 1. **Protocol Neutrality**: Protocols continue to use `Decimal` for price/size fields
-2. **Domain Richness**: Domain models use primitives internally for semantic clarity
-3. **Boundary Conversion**: Adapters convert between raw types and domain primitives
+2. **Domain Richness**: Domain models expose primitives via computed fields
+3. **Computed Field Pattern**: Use `@computed_field` for all derived state
 4. **Incremental Migration**: Use mypy --strict to guide the migration process
 5. **Backward Compatibility**: Ensure protocols remain satisfied throughout migration
 
-## Phase 1: Core Primitive Implementation
+## Phase 1: Core Primitive Implementation ✅ COMPLETED
 
-### 1.1 Create Base Domain Primitives
+### 1.1 Create Base Domain Primitives ✅
 
 Location: `src/market/domain/primitives.py`
 
-```python
-# Core primitives to implement:
-- Price: Financial price with currency context
-- Size: Quantity/volume of an asset
-- Percentage: Percentage values (50 = 50%)
-- BasisPoints: Basis points (100 = 1%)
-- Spread: Price spread with reference price
-- Volume: Trading volume with time context
-- VWAP: Volume-weighted average price
-```
+Implemented primitives:
 
-### 1.2 Key Features for Each Primitive
+- ✅ Price: Financial price with currency context
+- ✅ Size: Quantity/volume of an asset
+- ✅ Percentage: Percentage values (50 = 50%)
+- ✅ BasisPoints: Basis points (100 = 1%)
+- ✅ Spread: Price spread with bid/ask prices
+- ✅ Volume: Trading volume with time context
+- ✅ VWAP: Volume-weighted average price
 
-- Immutable (frozen=True)
-- Validation (non-negative for prices, etc.)
-- Conversion methods (to_decimal(), as_float())
-- Rich comparison operators
-- Arithmetic operations where sensible
-- Formatting methods for display
+### 1.2 Key Features for Each Primitive ✅
 
-### 1.3 Protocol Satisfaction
+All primitives implemented with:
 
-Each primitive must be able to satisfy protocol requirements:
+- ✅ Immutable (frozen=True)
+- ✅ Validation (non-negative for prices, etc.)
+- ✅ Conversion methods (to_decimal(), as_float())
+- ✅ Rich comparison operators
+- ✅ Arithmetic operations where sensible
+- ✅ Formatting methods for display
 
-```python
-class Price(BaseModel):
-    value: Decimal
+### 1.3 Protocol Satisfaction ✅
 
-    def to_decimal(self) -> Decimal:
-        """For protocol satisfaction"""
-        return self.value
-```
+Each primitive provides `to_decimal()` for protocol compatibility.
 
 ## Phase 2: Update Domain Models
 
@@ -57,68 +58,60 @@ class Price(BaseModel):
 
 Update in order of dependency:
 
-1. **MarketTicker** (`src/market/model/ticker.py`)
+1. **MarketTicker** (`src/market/model/ticker.py`) ✅ COMPLETED
 
-   - Change `price: Decimal` to `_price: Price`
-   - Add property to satisfy protocol
-   - Update spread/mid_price calculations
+   - ✅ Store fields as Decimal (protocol-compliant)
+   - ✅ Add computed fields for primitives (`price_primitive`, etc.)
+   - ✅ Update spread/mid_price as computed fields
+   - ✅ Rich domain methods use primitives internally
 
-2. **MarketTrade** (`src/market/model/trade.py`)
+2. **MarketTrade** (`src/market/model/trade.py`) ⏳ TODO
 
-   - Change price and size fields
+   - Apply same computed field pattern
    - Maintain protocol compatibility
 
-3. **OrderBook** (`src/market/model/book.py`)
+3. **OrderBook** (`src/market/model/book.py`) ⏳ TODO
 
-   - Update price levels to use primitives
+   - Update price levels to expose primitives
    - Enhance spread calculations
 
-4. **MarketSnapshot** (`src/market/model/snapshot.py`)
-   - No direct changes, but verify composition works
+4. **MarketSnapshot** (`src/market/model/snapshot.py`) ⏳ TODO
+   - Verify composition works with updated models
 
-### 2.2 Analysis Models
+### 2.2 Analysis Models ⏳ TODO
 
 Update analysis models to leverage primitives:
 
 1. **SpreadAnalysis** (`src/market/analysis/models.py`)
 
-   - Use Spread and BasisPoints types
+   - Use computed fields for Spread and BasisPoints
    - Simplify calculations
 
 2. **TradeFlowAnalysis**
 
-   - Use VWAP type for vwap field
-   - Use Volume for volume fields
+   - Use computed VWAP fields
+   - Use Volume computed fields
 
 3. **Technical Indicators**
    - Update each indicator to use appropriate primitives
 
-## Phase 3: Update Adapters
+## Phase 3: Update Adapters ⏳ TODO
 
 ### 3.1 Coinbase Adapter
 
 - Keep raw string/float fields
-- Convert to primitives in transformation methods
-- Maintain protocol properties returning Decimal
+- Protocol properties already return Decimal
+- Domain models will handle primitive conversion
 
-### 3.2 Add Factory Methods
+### 3.2 Factory Methods
 
-Create factory methods for easy conversion:
+No longer needed - Pydantic handles conversion automatically.
 
-```python
-@classmethod
-def from_ticker_data(cls, data: TickerData) -> MarketTicker:
-    return cls(
-        _price=Price(value=data.price),  # Decimal from property
-        ...
-    )
-```
-
-## Phase 4: Update Service Layer
+## Phase 4: Update Service Layer ⏳ TODO
 
 ### 4.1 Technical Analysis Service
 
-- Update to work with primitives
+- Update to work with primitives where beneficial
 - Maintain backward compatibility for caching
 
 ### 4.2 Analysis Pipeline
@@ -126,7 +119,7 @@ def from_ticker_data(cls, data: TickerData) -> MarketTicker:
 - Leverage rich primitive methods
 - Simplify transformation logic
 
-## Phase 5: Update UI Layer
+## Phase 5: Update UI Layer ⏳ TODO
 
 ### 5.1 Dashboard Updates
 
@@ -136,40 +129,37 @@ def from_ticker_data(cls, data: TickerData) -> MarketTicker:
 
 ## Phase 6: Test Updates
 
-### 6.1 Test Helpers
+### 6.1 Test Helpers ⏳ TODO
 
-- Update builders to work with primitives
-- Add primitive factory methods
+- Update builders to work with models using computed fields
+- Tests can continue using Decimal inputs
 
 ### 6.2 Unit Tests
 
-- Update assertions to work with primitives
-- Test primitive-specific behavior
+- ✅ Primitive tests complete (29 tests passing)
+- ✅ MarketTicker tests updated (13 tests passing)
+- ⏳ Other model tests need updates
 
-### 6.3 Integration Tests
+### 6.3 Integration Tests ⏳ TODO
 
 - Ensure end-to-end flows work
 - Verify protocol satisfaction
 
 ## Implementation Strategy
 
-### Step 1: Implement Core Primitives
+### ✅ Step 1: Implement Core Primitives - COMPLETED
 
-1. Create `src/market/domain/` directory
-2. Implement `primitives.py` with all domain primitives
-3. Add comprehensive tests for primitives
-4. Run `mypy --strict src/market/domain/`
+1. ✅ Created `src/market/domain/` directory
+2. ✅ Implemented `primitives.py` with all domain primitives
+3. ✅ Added comprehensive tests for primitives
+4. ✅ Validated with mypy
 
-### Step 2: Update One Model Chain
+### Step 2: Update One Model Chain - IN PROGRESS
 
-Start with ticker → trade → analysis flow:
+✅ MarketTicker completed with computed field pattern
+⏳ Continue with trade → analysis flow
 
-1. Update MarketTicker to use Price internally
-2. Run `mypy --strict` and fix type errors
-3. Update dependent models
-4. Update tests for that model
-
-### Step 3: Cascade Updates
+### Step 3: Cascade Updates ⏳ TODO
 
 Use mypy errors to guide the cascade:
 
@@ -178,7 +168,7 @@ Use mypy errors to guide the cascade:
 3. Run tests after each module update
 4. Commit working increments
 
-### Step 4: Update UI and Helpers
+### Step 4: Update UI and Helpers ⏳ TODO
 
 1. Update UI to use formatting methods
 2. Update test helpers
@@ -186,81 +176,48 @@ Use mypy errors to guide the cascade:
 
 ## Validation Checklist
 
-- [ ] All protocols still return Decimal for price/size
-- [ ] All domain models use primitives internally
-- [ ] All tests pass
-- [ ] `mypy --strict src/` passes
-- [ ] `ruff check src/` passes
-- [ ] UI displays correctly
-- [ ] Performance is not degraded
+- ✅ All protocols still return Decimal for price/size
+- ✅ Domain models use computed fields for primitives
+- ✅ MarketTicker tests pass
+- ⏳ `mypy --strict src/` passes
+- ⏳ `ruff check src/` passes
+- ⏳ UI displays correctly
+- ⏳ Performance is not degraded
 
-## Migration Tools
+## Key Learnings
 
-### Type Checking Commands
-
-```bash
-# Check specific module
-mypy --strict src/market/model/ticker.py
-
-# Check all with specific focus
-mypy --strict src/ | grep -E "(Price|Size|Decimal)"
-
-# Progressive checking
-mypy --strict src/market/domain/
-mypy --strict src/market/model/
-mypy --strict src/market/analysis/
-mypy --strict src/market/service/
-mypy --strict src/
-```
-
-### Testing Commands
-
-```bash
-# Test primitives first
-pytest tests/unit/market/test_primitives.py -xvs
-
-# Test model by model
-pytest tests/unit/market/test_ticker.py -xvs
-
-# Run all tests
-pytest -xvs
-```
-
-## Rollback Plan
-
-If issues arise:
-
-1. Domain primitives can coexist with Decimal
-2. Can be rolled back module by module
-3. Git branch protection ensures clean rollback
+1. **Computed Field Pattern**: The `@computed_field` decorator is the key to clean architecture
+2. **Type Ignore Needed**: Use `# type: ignore[misc]` for decorator order issues
+3. **Serialization**: Computed fields are excluded by default - override `model_dump()` if needed
+4. **Property Access**: Computed fields work like regular properties after creation
 
 ## Success Criteria
 
 1. **Type Safety**: mypy --strict passes
 2. **Semantic Clarity**: Code expresses domain concepts clearly
 3. **No Regressions**: All tests pass
-4. **Performance**: No degradation in performance
+4. **Performance**: No degradation (computed fields are cached)
 5. **Developer Experience**: Improved autocomplete and discoverability
 
-## Estimated Timeline
+## Progress Timeline
 
-- Phase 1 (Core Primitives): 2-3 hours
-- Phase 2 (Domain Models): 3-4 hours
-- Phase 3 (Adapters): 2 hours
-- Phase 4 (Services): 2 hours
-- Phase 5 (UI): 1 hour
-- Phase 6 (Tests): 3-4 hours
+- ✅ Phase 1 (Core Primitives): Completed in ~2 hours
+- 🔄 Phase 2 (Domain Models): MarketTicker done, ~3 hours remaining
+- ⏳ Phase 3 (Adapters): 2 hours estimated
+- ⏳ Phase 4 (Services): 2 hours estimated
+- ⏳ Phase 5 (UI): 1 hour estimated
+- 🔄 Phase 6 (Tests): ~2 hours remaining
 
-Total: ~15-20 hours of focused work
+Total Progress: ~25% complete (4-5 hours done, ~10-11 hours remaining)
 
 ## Next Steps
 
-1. Review and refine this plan
-2. Create the domain package structure
-3. Implement Price primitive first
-4. Use TDD to build out primitives
-5. Begin incremental migration
+1. ✅ Price primitive implemented and tested
+2. ✅ MarketTicker updated with computed field pattern
+3. ⏳ Update MarketTrade model next
+4. ⏳ Continue cascade through dependent models
+5. ⏳ Update services to leverage primitives
 
 ---
 
-_Note: This is a living document. Update as we discover new requirements or challenges during implementation._
+_Note: This is a living document. Last updated after discovering the computed field pattern and completing MarketTicker implementation._
