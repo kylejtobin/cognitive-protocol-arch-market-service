@@ -48,31 +48,31 @@ class MarketTicker(BaseModel):
     vwap: Decimal | None = Field(None, gt=0)
 
     # Computed domain primitives (cached for performance)
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def price_primitive(cls) -> Price:
         """Price as domain primitive for calculations."""
         return Price(value=cls.price)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def size_primitive(cls) -> Size:
         """Size as domain primitive for calculations."""
         return Size(value=cls.size)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def bid_primitive(cls) -> Price | None:
         """Bid price as domain primitive."""
         return Price(value=cls.bid) if cls.bid is not None else None
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ask_primitive(cls) -> Price | None:
         """Ask price as domain primitive."""
         return Price(value=cls.ask) if cls.ask is not None else None
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def volume_primitive(cls) -> Volume | None:
         """Volume as domain primitive."""
@@ -81,7 +81,7 @@ class MarketTicker(BaseModel):
         return None
 
     # Computed derived values
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def spread(cls) -> Decimal | None:
         """Calculate bid-ask spread."""
@@ -89,7 +89,7 @@ class MarketTicker(BaseModel):
             return None
         return cls.ask - cls.bid
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def mid_price(cls) -> Decimal | None:
         """Calculate mid price between bid and ask."""

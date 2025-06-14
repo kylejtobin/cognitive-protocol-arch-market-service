@@ -95,6 +95,95 @@ Update analysis models to leverage primitives:
 3. **Technical Indicators**
    - Update each indicator to use appropriate primitives
 
+## Phase 2.5: Analysis Component Primitives 🆕 NEXT
+
+### Overview
+
+Create domain primitives for technical indicator values to provide type safety and rich behavior for analysis components.
+
+### Analysis Primitives to Implement
+
+Location: `src/market/domain/analysis_primitives.py`
+
+1. **RSIValue**
+
+   ```python
+   - value: Decimal (0-100)
+   - zone: Literal["oversold", "neutral", "overbought"]
+   - distance_from_neutral() -> Decimal
+   - is_diverging(price_trend: Trend) -> bool
+   ```
+
+2. **MACDValue**
+
+   ```python
+   - macd_line: Decimal
+   - signal_line: Decimal
+   - histogram: Decimal
+   - trend: Literal["bullish", "bearish", "neutral"]
+   - crossover_strength() -> Percentage
+   ```
+
+3. **StochasticValue**
+
+   ```python
+   - k_value: Decimal (0-100)
+   - d_value: Decimal (0-100)
+   - zone: Literal["oversold", "neutral", "overbought"]
+   - momentum: Literal["increasing", "decreasing", "stable"]
+   ```
+
+4. **BollingerBandPosition**
+
+   ```python
+   - price: Price
+   - upper_band: Price
+   - middle_band: Price
+   - lower_band: Price
+   - position_pct: Percentage  # Position within bands
+   - band_width: Decimal
+   - squeeze_detected: bool
+   ```
+
+5. **VolumeProfile**
+   ```python
+   - current_volume: Volume
+   - average_volume: Volume
+   - volume_ratio: Decimal
+   - buy_pressure: Percentage
+   - sell_pressure: Percentage
+   - is_abnormal() -> bool
+   ```
+
+### Update Analysis Models
+
+1. **RSIAnalysis** (`src/market/analysis/momentum_indicators.py`)
+
+   - Add `rsi_value: Decimal` field
+   - Add `@computed_field rsi_primitive` returning `RSIValue`
+   - Update methods to use primitive
+
+2. **MACDAnalysis** (`src/market/analysis/macd.py`)
+
+   - Store raw values as Decimal
+   - Expose MACD primitive via computed field
+   - Simplify crossover detection
+
+3. **StochasticAnalysis** (`src/market/analysis/stochastic.py`)
+
+   - Similar pattern with StochasticValue
+
+4. **VolumeAnalysis** (`src/market/analysis/volume_analysis.py`)
+   - Use Volume primitives throughout
+   - Add VolumeProfile computed field
+
+### Benefits
+
+- **Type Safety**: Can't have RSI > 100 or < 0
+- **Rich Semantics**: `rsi.is_oversold` vs `rsi < 30`
+- **Consistent Calculations**: Zone detection in one place
+- **Better Testing**: Test primitives independently
+
 ## Phase 3: Update Adapters ⏳ TODO
 
 ### 3.1 Coinbase Adapter
@@ -159,6 +248,14 @@ No longer needed - Pydantic handles conversion automatically.
 ✅ MarketTicker completed with computed field pattern
 ⏳ Continue with trade → analysis flow
 
+### Step 2.5: Analysis Primitives - NEXT
+
+1. Create `analysis_primitives.py`
+2. Implement RSIValue first (simplest)
+3. Update RSIAnalysis to use it
+4. Run tests and fix issues
+5. Continue with other indicators
+
 ### Step 3: Cascade Updates ⏳ TODO
 
 Use mypy errors to guide the cascade:
@@ -190,6 +287,7 @@ Use mypy errors to guide the cascade:
 2. **Type Ignore Needed**: Use `# type: ignore[misc]` for decorator order issues
 3. **Serialization**: Computed fields are excluded by default - override `model_dump()` if needed
 4. **Property Access**: Computed fields work like regular properties after creation
+5. **Services ≠ Models**: Services orchestrate behavior, models hold data - don't mix them!
 
 ## Success Criteria
 
@@ -202,22 +300,27 @@ Use mypy errors to guide the cascade:
 ## Progress Timeline
 
 - ✅ Phase 1 (Core Primitives): Completed in ~2 hours
-- 🔄 Phase 2 (Domain Models): MarketTicker done, ~3 hours remaining
+- ✅ Phase 2 (Domain Models): MarketTicker done, ~3 hours remaining
+- ✅ Phase 2.5 (Analysis Primitives): Completed in ~1 hour
+- ✅ RSIAnalysis updated to use RSIValue primitive
+- ✅ All mypy --strict issues resolved
 - ⏳ Phase 3 (Adapters): 2 hours estimated
 - ⏳ Phase 4 (Services): 2 hours estimated
 - ⏳ Phase 5 (UI): 1 hour estimated
-- 🔄 Phase 6 (Tests): ~2 hours remaining
+- ✅ Phase 6 (Tests): RSI tests updated, ~1 hour remaining
 
-Total Progress: ~25% complete (4-5 hours done, ~10-11 hours remaining)
+Total Progress: ~40% complete (6 hours done, ~9 hours remaining)
 
 ## Next Steps
 
 1. ✅ Price primitive implemented and tested
 2. ✅ MarketTicker updated with computed field pattern
-3. ⏳ Update MarketTrade model next
-4. ⏳ Continue cascade through dependent models
-5. ⏳ Update services to leverage primitives
+3. ✅ Create analysis primitives starting with RSIValue
+4. ✅ Update RSIAnalysis to use RSIValue primitive
+5. ⏳ Continue with other analysis components (MACD, Stochastic, etc.)
+6. ⏳ Update MarketTrade model with primitives
+7. ⏳ Update OrderBook model with primitives
 
 ---
 
-_Note: This is a living document. Last updated after discovering the computed field pattern and completing MarketTicker implementation._
+_Note: This is a living document. Last updated after implementing analysis primitives and fixing all mypy issues._

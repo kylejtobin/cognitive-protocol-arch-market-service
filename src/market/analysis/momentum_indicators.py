@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Literal
 
 import pandas as pd
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, computed_field, field_validator
 
 from src.market.analysis.base import BaseIndicator
 from src.market.analysis.contexts import (
@@ -24,6 +24,7 @@ from src.market.analysis.contexts import (
     SignalSuggestion,
 )
 from src.market.analysis.registry import register
+from src.market.domain.analysis_primitives import RSIValue
 
 
 @register("rsi")
@@ -40,30 +41,68 @@ class RSIAnalysis(BaseIndicator):
 
     period: int = Field(default=14, ge=2, le=100)
 
-    # RSI calculation results
-    rsi_value: float = Field(ge=0, le=100)
-    average_gain: float = Field(ge=0)
-    average_loss: float = Field(ge=0)
+    # RSI calculation results - store as Decimal for protocol compliance
+    rsi_value: Decimal = Field(ge=0, le=100)
+    average_gain: Decimal = Field(ge=0)
+    average_loss: Decimal = Field(ge=0)
 
-    # Semantic interpretations
-    momentum_state: Literal[
+    # Semantic interpretations - computed from primitive
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def momentum_state(
+        cls,
+    ) -> Literal[
         "strongly_bullish", "bullish", "neutral", "bearish", "strongly_bearish"
-    ]
-    momentum_strength: Literal["extreme", "strong", "moderate", "weak"]
-    is_overbought: bool = Field(default=False)
-    is_oversold: bool = Field(default=False)
+    ]:
+        """Determine momentum state from RSI primitive."""
+        rsi = cls.rsi_primitive
+        if rsi.value >= 80:
+            return "strongly_bullish"
+        elif rsi.value >= 60:
+            return "bullish"
+        elif rsi.value >= 40:
+            return "neutral"
+        elif rsi.value >= 20:
+            return "bearish"
+        else:
+            return "strongly_bearish"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def momentum_strength(cls) -> Literal["extreme", "strong", "moderate", "weak"]:
+        """Get momentum strength from RSI primitive."""
+        return cls.rsi_primitive.strength
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_overbought(cls) -> bool:
+        """Check if RSI is in overbought zone."""
+        return cls.rsi_primitive.zone == "overbought"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_oversold(cls) -> bool:
+        """Check if RSI is in oversold zone."""
+        return cls.rsi_primitive.zone == "oversold"
 
     # Divergence detection (optional)
     divergence_detected: bool = Field(default=False)
     divergence_type: Literal["bullish", "bearish", "none"] = Field(default="none")
 
+    # Domain primitive as computed field
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rsi_primitive(cls) -> RSIValue:
+        """Get RSI as domain primitive with rich behavior."""
+        return RSIValue(value=cls.rsi_value)
+
     @field_validator("rsi_value")
     @classmethod
-    def validate_rsi(cls, v: float) -> float:
+    def validate_rsi(cls, v: Decimal) -> Decimal:
         """Ensure RSI is within valid range."""
         if not 0 <= v <= 100:
             raise ValueError(f"RSI must be between 0 and 100, got {v}")
-        return round(v, 2)
+        return v
 
     @classmethod
     def from_price_series(
@@ -99,7 +138,7 @@ class RSIAnalysis(BaseIndicator):
 
         # Calculate RSI using our own implementation
         rsi_values = cls._calculate_rsi(prices, period)
-        current_rsi = float(rsi_values.iloc[-1])
+        current_rsi = Decimal(str(rsi_values.iloc[-1]))
 
         # Calculate average gains and losses for transparency
         price_changes = prices.diff()
@@ -107,12 +146,8 @@ class RSIAnalysis(BaseIndicator):
         losses = -price_changes.where(price_changes < 0, 0)
 
         # Use simple moving average for the most recent values
-        avg_gain = float(gains.tail(period).mean())
-        avg_loss = float(losses.tail(period).mean())
-
-        # Determine momentum state
-        momentum_state = cls._determine_momentum_state(current_rsi)
-        momentum_strength = cls._determine_momentum_strength(current_rsi)
+        avg_gain = Decimal(str(gains.tail(period).mean()))
+        avg_loss = Decimal(str(losses.tail(period).mean()))
 
         # Check for divergence if requested
         divergence_detected = False
@@ -130,10 +165,6 @@ class RSIAnalysis(BaseIndicator):
             rsi_value=current_rsi,
             average_gain=avg_gain,
             average_loss=avg_loss,
-            momentum_state=momentum_state,
-            momentum_strength=momentum_strength,
-            is_overbought=current_rsi >= 70,
-            is_oversold=current_rsi <= 30,
             divergence_detected=divergence_detected,
             divergence_type=divergence_type,
         )
@@ -176,39 +207,6 @@ class RSIAnalysis(BaseIndicator):
         return rsi
 
     @staticmethod
-    def _determine_momentum_state(
-        rsi: float,
-    ) -> Literal[
-        "strongly_bullish", "bullish", "neutral", "bearish", "strongly_bearish"
-    ]:
-        """Determine momentum state from RSI value."""
-        if rsi >= 80:
-            return "strongly_bullish"
-        elif rsi >= 60:
-            return "bullish"
-        elif rsi >= 40:
-            return "neutral"
-        elif rsi >= 20:
-            return "bearish"
-        else:
-            return "strongly_bearish"
-
-    @staticmethod
-    def _determine_momentum_strength(
-        rsi: float,
-    ) -> Literal["extreme", "strong", "moderate", "weak"]:
-        """Determine momentum strength from RSI value."""
-        distance_from_center = abs(rsi - 50)
-        if distance_from_center >= 40:  # RSI <= 10 or >= 90
-            return "extreme"
-        elif distance_from_center >= 30:  # RSI <= 20 or >= 80
-            return "strong"
-        elif distance_from_center >= 20:  # RSI <= 30 or >= 70
-            return "moderate"
-        else:
-            return "weak"
-
-    @staticmethod
     def _check_divergence(
         prices: pd.Series, rsi: pd.Series, period: int
     ) -> tuple[bool, Literal["bullish", "bearish", "none"]]:
@@ -249,6 +247,9 @@ class RSIAnalysis(BaseIndicator):
 
     def semantic_summary(self) -> str:
         """Generate one-line summary for agent prompts."""
+        # Use primitive's format_display for consistent formatting
+        primitive_display = self.rsi_primitive.format_display()
+
         state = self.momentum_state.replace("_", " ").title()
 
         if self.is_overbought:
@@ -258,7 +259,7 @@ class RSIAnalysis(BaseIndicator):
         else:
             condition = f"{self.momentum_strength} momentum"
 
-        summary = f"{state} momentum ({condition}) RSI:{self.rsi_value:.0f}"
+        summary = f"{state} momentum ({condition}) {primitive_display}"
 
         if self.divergence_detected:
             summary += f" with {self.divergence_type} divergence"
@@ -269,12 +270,15 @@ class RSIAnalysis(BaseIndicator):
         """Format analysis for agent consumption."""
         interpretation = self._generate_interpretation()
 
+        # Convert Decimal back to float for the context
+        rsi_float = float(self.rsi_value)
+
         return RSIAgentContext(
-            value=self.rsi_value,
+            value=rsi_float,
             state=self.momentum_state,
             strength=self.momentum_strength,
             key_levels=RSIKeyLevels(
-                current=self.rsi_value,
+                current=rsi_float,
                 overbought=70,
                 oversold=30,
                 neutral=50,
@@ -289,33 +293,34 @@ class RSIAnalysis(BaseIndicator):
 
     def _generate_interpretation(self) -> str:
         """Generate detailed interpretation for agents."""
+        rsi_val = float(self.rsi_value)
         if self.is_overbought:
             return (
-                f"RSI at {self.rsi_value:.1f} indicates overbought conditions. "
+                f"RSI at {rsi_val:.1f} indicates overbought conditions. "
                 "Market may be due for a pullback or consolidation. "
                 "Consider taking profits or waiting for better entry."
             )
         elif self.is_oversold:
             return (
-                f"RSI at {self.rsi_value:.1f} indicates oversold conditions. "
+                f"RSI at {rsi_val:.1f} indicates oversold conditions. "
                 "Potential bounce or reversal setup forming. "
                 "Watch for bullish confirmation signals."
             )
         elif self.momentum_state == "bullish":
             return (
-                f"RSI at {self.rsi_value:.1f} shows healthy bullish momentum. "
+                f"RSI at {rsi_val:.1f} shows healthy bullish momentum. "
                 "Trend favors upside continuation. "
                 "Look for pullbacks to support for entry."
             )
         elif self.momentum_state == "bearish":
             return (
-                f"RSI at {self.rsi_value:.1f} shows bearish momentum. "
+                f"RSI at {rsi_val:.1f} shows bearish momentum. "
                 "Downtrend pressure persists. "
                 "Rallies may offer shorting opportunities."
             )
         else:
             return (
-                f"RSI at {self.rsi_value:.1f} indicates neutral momentum. "
+                f"RSI at {rsi_val:.1f} indicates neutral momentum. "
                 "Market lacks clear directional bias. "
                 "Wait for momentum to develop before taking positions."
             )
@@ -331,18 +336,19 @@ class RSIAnalysis(BaseIndicator):
 
     def suggest_signal(self) -> SignalSuggestion:
         """Suggest trading signal based on RSI analysis."""
+        rsi_val = float(self.rsi_value)
         if self.is_oversold:
             return SignalSuggestion(
                 bias="bullish",
                 strength=self._calculate_signal_strength(),
-                reason=f"RSI oversold at {self.rsi_value:.1f}",
+                reason=f"RSI oversold at {rsi_val:.1f}",
                 action="watch_for_reversal",
             )
         elif self.is_overbought:
             return SignalSuggestion(
                 bias="bearish",
                 strength=self._calculate_signal_strength(),
-                reason=f"RSI overbought at {self.rsi_value:.1f}",
+                reason=f"RSI overbought at {rsi_val:.1f}",
                 action="consider_profit_taking",
             )
         elif self.divergence_detected:
@@ -356,7 +362,7 @@ class RSIAnalysis(BaseIndicator):
             return SignalSuggestion(
                 bias="neutral",
                 strength="weak",
-                reason=f"No clear signal at RSI {self.rsi_value:.1f}",
+                reason=f"No clear signal at RSI {rsi_val:.1f}",
                 action="wait",
             )
 

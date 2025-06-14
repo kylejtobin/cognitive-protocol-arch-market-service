@@ -59,7 +59,7 @@ class TestRSIAnalysis:
         )
 
         # With 14-period RSI and this data, expected RSI should be around 70.53
-        assert analysis.rsi_value == pytest.approx(70.53, abs=0.5)
+        assert float(analysis.rsi_value) == pytest.approx(70.53, abs=0.5)
         assert analysis.momentum_state == "bullish"
         assert analysis.is_overbought is True
         assert analysis.is_oversold is False
@@ -77,7 +77,7 @@ class TestRSIAnalysis:
         )
 
         # Strong downtrend should produce low RSI
-        assert analysis.rsi_value < 30
+        assert float(analysis.rsi_value) < 30
         assert analysis.momentum_state in ["bearish", "strongly_bearish"]
         assert analysis.is_oversold is True
         assert analysis.is_overbought is False
@@ -100,7 +100,7 @@ class TestRSIAnalysis:
         )
 
         # Sideways market should produce RSI near 50
-        assert 40 < analysis.rsi_value < 60
+        assert 40 < float(analysis.rsi_value) < 60
         assert analysis.momentum_state == "neutral"
         assert analysis.is_oversold is False
         assert analysis.is_overbought is False
@@ -190,13 +190,13 @@ class TestRSIAnalysis:
         assert isinstance(context, RSIAgentContext)
 
         # Verify the typed fields
-        assert context.value == analysis.rsi_value
+        assert context.value == float(analysis.rsi_value)
         assert context.state == analysis.momentum_state
         assert context.strength == analysis.momentum_strength
         assert context.indicator == "rsi"
 
         # Check nested structures
-        assert context.key_levels.current == analysis.rsi_value
+        assert context.key_levels.current == float(analysis.rsi_value)
         assert context.key_levels.overbought == 70
         assert context.key_levels.oversold == 30
         assert context.key_levels.neutral == 50
@@ -237,10 +237,10 @@ class TestRSIAnalysis:
         )
 
         # Both should show bullish bias but not be at 100
-        assert 50 < rsi_9.rsi_value < 90
-        assert 50 < rsi_21.rsi_value < 90
+        assert 50 < float(rsi_9.rsi_value) < 90
+        assert 50 < float(rsi_21.rsi_value) < 90
         # Shorter period RSI is more volatile, not necessarily higher
-        assert abs(rsi_9.rsi_value - rsi_21.rsi_value) < 20
+        assert abs(float(rsi_9.rsi_value) - float(rsi_21.rsi_value)) < 20
 
     def test_rsi_extreme_values(self) -> None:
         """Test RSI behavior at extremes."""
@@ -252,7 +252,7 @@ class TestRSIAnalysis:
             timestamp=datetime.now(UTC),
             period=14,
         )
-        assert analysis_up.rsi_value > 90
+        assert float(analysis_up.rsi_value) > 90
         assert analysis_up.momentum_state == "strongly_bullish"
 
         # All losses (should approach 0)
@@ -263,7 +263,7 @@ class TestRSIAnalysis:
             timestamp=datetime.now(UTC),
             period=14,
         )
-        assert analysis_down.rsi_value < 10
+        assert float(analysis_down.rsi_value) < 10
         assert analysis_down.momentum_state == "strongly_bearish"
 
     def test_rsi_signal_generation(self) -> None:
