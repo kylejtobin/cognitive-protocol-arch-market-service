@@ -358,7 +358,11 @@ class MarketProfileWidget(Widget):
 
             # Create price row
             if abs(price - current_price) < price_range / 48:
-                row = Text(f"  ▶ ${price:,.2f} ◀  {level_text}", style="bold yellow")
+                price_prim = Price(value=Decimal(str(price)))
+                row = Text(
+                    f"  ▶ {price_prim.format_display()} ◀  {level_text}",
+                    style="bold yellow",
+                )
             else:
                 distance_pct = ((price - current_price) / current_price) * 100
                 row = Text(
@@ -697,16 +701,21 @@ class DenseMarketDashboard(App[None]):
                 else Decimal("0")
             )
             spread_bps = (
-                (spread / snapshot.ticker.price * 10000)
-                if snapshot.ticker.price > 0
-                else Decimal("0")
+                float(spread / ((snapshot.ticker.bid + snapshot.ticker.ask) / 2))
+                * 10000
+                if snapshot.ticker.bid and snapshot.ticker.ask
+                else 0
+            )
+
+            # Use domain primitives for rich formatting
+            price_display = snapshot.ticker.price_primitive.format_display()
+            spread_display = f"{spread_bps:.0f}bps" if spread_bps else "N/A"
+            volume_display = (
+                snapshot.ticker.format_volume() if snapshot.ticker.volume else "N/A"
             )
 
             self.sub_title = (
-                f"{snapshot.ticker.symbol} "
-                f"${snapshot.ticker.price:,.2f} | "
-                f"Spread: {spread_bps:.1f}bps | "
-                f"Vol: {snapshot.ticker.volume:,.0f}"
+                f"{price_display} | Spread: {spread_display} | Vol: {volume_display}"
             )
 
         # Update widgets
