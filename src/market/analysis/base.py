@@ -7,7 +7,7 @@ and a registry system for dynamic indicator loading.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import TypeVar, Union
+from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,14 +24,14 @@ from src.market.analysis.contexts import (
 T = TypeVar("T", bound="BaseIndicator")
 
 # Union type for all possible agent contexts
-AgentContext = Union[
-    RSIAgentContext,
-    MACDAgentContext,
-    StochasticAgentContext,
-    VolumeAgentContext,
-    MomentumAgentContext,
-    BaseAgentContext,  # Fallback for custom indicators
-]
+AgentContext = (
+    RSIAgentContext
+    | MACDAgentContext
+    | StochasticAgentContext
+    | VolumeAgentContext
+    | MomentumAgentContext
+    | BaseAgentContext  # Fallback for custom indicators
+)
 
 
 class BaseIndicator(BaseModel, ABC):

@@ -13,7 +13,7 @@ Key design principles:
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Generic, TypeVar
 
@@ -103,7 +103,7 @@ class TickerData(BaseModel):
     )
     best_bid_raw: str | float | None = Field(alias="best_bid", default=None)
     best_ask_raw: str | float | None = Field(alias="best_ask", default=None)
-    time: str
+    time: str | None = None  # Made optional - Coinbase doesn't always send this
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -142,7 +142,12 @@ class TickerData(BaseModel):
     @property
     def timestamp(self) -> datetime:
         """Get ticker timestamp."""
-        return datetime.fromisoformat(self.time.replace("Z", "+00:00"))
+        # Use the time field if available, otherwise use current time
+        if self.time:
+            return datetime.fromisoformat(self.time.replace("Z", "+00:00"))
+        else:
+            # Fallback to current time if no time field
+            return datetime.now(UTC)
 
 
 class TickerEvent(CoinbaseBaseEvent):

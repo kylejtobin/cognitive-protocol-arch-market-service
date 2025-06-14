@@ -74,7 +74,7 @@ class Price(BaseModel):
             return f"{self.value:,.{decimals}f} {self.currency}"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -127,7 +127,7 @@ class Size(BaseModel):
         return Size(value=self.value * Decimal(str(scalar)))
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -155,7 +155,7 @@ class Percentage(BaseModel):
         return f"{self.value:.{decimals}f}%"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -183,7 +183,7 @@ class BasisPoints(BaseModel):
         return f"{self.value:.{decimals}f}bps"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -221,7 +221,7 @@ class Spread(BaseModel):
         return f"{self.reference_price.currency} {self.value:.4f} ({self.as_basis_points()})"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -258,7 +258,7 @@ class Volume(BaseModel):
             return f"{self.size} ({self.timeframe_hours}h)"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
 
@@ -294,7 +294,7 @@ class VWAP(BaseModel):
         return f"VWAP: {self.price} (conf: {confidence_pct:.0f}%)"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return self.format_display()
 
     @classmethod

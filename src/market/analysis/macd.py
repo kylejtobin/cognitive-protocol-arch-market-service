@@ -358,7 +358,7 @@ class MACDAnalysis(BaseIndicator):
             return SignalSuggestion(
                 bias="bullish" if self.zero_cross == "bullish" else "bearish",
                 strength="moderate",
-                reason=f"MACD crossed {'above' if self.zero_cross == 'bullish' else 'below'} zero",
+                reason=f"MACD crossed {'above' if self.zero_cross == 'bullish' else 'below'} zero",  # noqa: E501
                 action="prepare_entry"
                 if self.zero_cross == "bullish"
                 else "reduce_risk",

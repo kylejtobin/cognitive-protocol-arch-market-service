@@ -76,7 +76,7 @@ class RSIValue(BaseModel):
         return f"RSI {self.value:.1f} {zone_indicator}"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return f"RSI({self.value:.1f}, {self.zone})"
 
 
@@ -149,8 +149,8 @@ class MACDValue(BaseModel):
         return f"MACD {self.macd_line:.2f}/{self.signal_line:.2f} {trend_indicator}"
 
     def __str__(self) -> str:
-        """String representation."""
-        return f"MACD(line={self.macd_line:.2f}, signal={self.signal_line:.2f}, hist={self.histogram:.2f})"
+        """Return string representation."""
+        return f"MACD(line={self.macd_line:.2f}, signal={self.signal_line:.2f}, hist={self.histogram:.2f})"  # noqa: E501
 
 
 class StochasticValue(BaseModel):
@@ -210,7 +210,7 @@ class StochasticValue(BaseModel):
         return f"Stoch %K:{self.k_value:.1f}/%D:{self.d_value:.1f} {momentum_indicator}"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return f"Stochastic(K={self.k_value:.1f}, D={self.d_value:.1f}, {self.zone})"
 
 
@@ -270,7 +270,7 @@ class VolumeProfile(BaseModel):
         return self.volume_ratio > threshold
 
     def is_climactic(self) -> bool:
-        """Check if volume shows climactic activity (very high with extreme pressure)."""
+        """Check if volume shows climactic activity (high with extreme pressure)."""
         is_high_volume = self.volume_ratio > Decimal("3")
         is_extreme_pressure = (
             self.buy_pressure.value > 80 or self.sell_pressure.value > 80
@@ -291,7 +291,7 @@ class VolumeProfile(BaseModel):
         return f"Vol {volume_desc} {pressure_indicator}"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return f"Volume({self.volume_ratio:.1f}x, buy={self.buy_pressure.value:.0f}%)"
 
 
@@ -382,5 +382,5 @@ class BollingerBandPosition(BaseModel):
         return f"BB {self.position_pct.value:.0f}% {zone_indicator}{squeeze_text}"
 
     def __str__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         return f"BB({self.position_pct.value:.0f}%, {self.position_zone})"

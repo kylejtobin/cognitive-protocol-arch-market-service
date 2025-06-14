@@ -37,9 +37,4 @@ def __getattr__(name: str) -> type[BaseIndicator]:
 
 
 # Force registration of all indicators
-from . import (
-    macd,
-    momentum_indicators,
-    stochastic,
-    volume_analysis,  # noqa: F401
-)
+from . import macd, momentum_indicators, stochastic, volume_analysis  # noqa: F401, E402

@@ -97,7 +97,9 @@ class CoinbaseStreamHandler:
                         symbol=symbol,
                         exchange="coinbase",
                         price=ticker_data.price,
-                        size=Decimal("0"),  # Ticker doesn't include last trade size
+                        size=Decimal(
+                            "0.001"
+                        ),  # Default minimal size since ticker doesn't include it
                         bid=ticker_data.bid,
                         ask=ticker_data.ask,
                         bid_size=None,  # Not provided by ticker channel
