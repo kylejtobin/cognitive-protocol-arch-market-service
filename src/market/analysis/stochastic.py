@@ -381,7 +381,7 @@ class StochasticAnalysis(BaseIndicator):
                 return SignalSuggestion(
                     bias=bias,
                     strength="moderate",
-                    reason=f"{self.crossover_type.title()} crossover at {self.k_value:.1f}",
+                    reason=f"{self.crossover_type.title()} crossover at {self.k_value:.1f}",  # noqa: E501
                     action="await_confirmation",
                 )
         elif self.divergence_detected:

@@ -9,8 +9,9 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
+from src.market.domain.primitives import Percentage, Price, Spread
 from src.market.model.types import PriceLevelData, PriceSize
 
 
@@ -119,6 +120,76 @@ class OrderBook(BaseModel):
         if self.spread is None or self.mid_price is None or self.mid_price == 0:
             return None
         return (self.spread / self.mid_price) * 100
+
+    # Domain primitives as computed fields
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def best_bid_primitive(cls) -> Price | None:
+        """Get best bid as domain primitive."""
+        if cls.best_bid is None:
+            return None
+        return Price(value=cls.best_bid)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def best_ask_primitive(cls) -> Price | None:
+        """Get best ask as domain primitive."""
+        if cls.best_ask is None:
+            return None
+        return Price(value=cls.best_ask)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def spread_primitive(cls) -> Spread | None:
+        """Get spread as domain primitive with rich behavior."""
+        if cls.best_bid is None or cls.best_ask is None:
+            return None
+        # Calculate spread and mid price directly
+        spread_value = cls.best_ask - cls.best_bid
+        mid_value = (cls.best_bid + cls.best_ask) / 2
+        ref_price = Price(value=mid_value)
+        return Spread(value=spread_value, reference_price=ref_price)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def spread_percentage_primitive(cls) -> Percentage | None:
+        """Get spread percentage as domain primitive."""
+        if cls.spread_percentage is None:
+            return None
+        return Percentage(value=cls.spread_percentage)
+
+    def is_liquid(self, max_spread_bps: int = 10) -> bool:
+        """Check if order book has tight spreads (liquid market)."""
+        if self.spread_primitive is None:
+            return False
+        return self.spread_primitive.is_tight(max_bps=Decimal(str(max_spread_bps)))
+
+    def get_depth_at_level(self, level: int, side: str) -> Decimal | None:
+        """Get cumulative depth up to a price level."""
+        levels = self.bids if side == "bid" else self.asks
+        if level >= len(levels):
+            return None
+
+        total = Decimal("0")
+        for i in range(level + 1):
+            total += levels.get_size_at_index(i)
+        return total
+
+    def format_top_of_book(self) -> str:
+        """Format top of book summary."""
+        if self.best_bid is None or self.best_ask is None:
+            return f"{self.symbol}: No market"
+
+        parts = [
+            f"{self.symbol}:",
+            f"Bid: {self.best_bid:.2f}",
+            f"Ask: {self.best_ask:.2f}",
+        ]
+
+        if self.spread_primitive:
+            parts.append(f"Spread: {self.spread_primitive.as_basis_points()}")
+
+        return " | ".join(parts)
 
 
 class MutableOrderBook:

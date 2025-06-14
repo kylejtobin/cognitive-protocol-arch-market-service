@@ -8,6 +8,7 @@ handling message parsing and state management for market data streaming.
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from coinbase.websocket import WSClient
@@ -94,10 +95,17 @@ class CoinbaseStreamHandler:
                     # Transform to domain model
                     domain_ticker = MarketTicker(
                         symbol=symbol,
+                        exchange="coinbase",
                         price=ticker_data.price,
+                        size=Decimal(
+                            "0.001"
+                        ),  # Default minimal size since ticker doesn't include it
                         bid=ticker_data.bid,
                         ask=ticker_data.ask,
+                        bid_size=None,  # Not provided by ticker channel
+                        ask_size=None,  # Not provided by ticker channel
                         volume=ticker_data.volume,
+                        vwap=None,  # Not provided by ticker channel
                         timestamp=ticker_data.timestamp,
                     )
 

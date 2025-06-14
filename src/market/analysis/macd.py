@@ -9,10 +9,11 @@ This module provides a Pydantic-based MACD implementation that:
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 import pandas as pd
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, computed_field, field_validator
 
 from src.market.analysis.base import BaseIndicator
 from src.market.analysis.contexts import (
@@ -22,6 +23,7 @@ from src.market.analysis.contexts import (
     SignalSuggestion,
 )
 from src.market.analysis.registry import register
+from src.market.domain.analysis_primitives import MACDValue
 
 
 @register("macd")
@@ -41,29 +43,92 @@ class MACDAnalysis(BaseIndicator):
     slow_period: int = Field(default=26, ge=5, le=200)
     signal_period: int = Field(default=9, ge=2, le=50)
 
-    # Calculated values
-    macd_value: float = Field(description="MACD line value")
-    signal_value: float = Field(description="Signal line value")
-    histogram_value: float = Field(description="Histogram value")
+    # Calculated values - store as Decimal for protocol compliance
+    macd_value: Decimal = Field(description="MACD line value")
+    signal_value: Decimal = Field(description="Signal line value")
 
     # Previous values for trend detection (optional)
-    prev_macd: float | None = Field(default=None)
-    prev_signal: float | None = Field(default=None)
-    prev_histogram: float | None = Field(default=None)
+    prev_macd: Decimal | None = Field(default=None)
+    prev_signal: Decimal | None = Field(default=None)
+    prev_histogram: Decimal | None = Field(default=None)
 
-    # Semantic interpretations
-    trend: Literal["bullish", "bearish", "neutral"]
-    momentum: Literal["increasing", "decreasing", "stable"]
-    signal_position: Literal["above_signal", "below_signal", "at_signal"]
-    histogram_trend: Literal["expanding", "contracting", "neutral"]
+    # Semantic interpretations - computed from primitive
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def histogram_value(cls) -> Decimal:
+        """Calculate histogram value."""
+        return cls.macd_primitive.histogram
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def trend(cls) -> Literal["bullish", "bearish", "neutral"]:
+        """Get trend from MACD primitive."""
+        return cls.macd_primitive.trend
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def momentum(cls) -> Literal["increasing", "decreasing", "stable"]:
+        """Determine momentum based on histogram changes."""
+        if cls.prev_histogram is None:
+            return "stable"
+
+        current_hist = cls.histogram_value
+        diff = abs(current_hist - cls.prev_histogram)
+        if diff < Decimal("0.01"):
+            return "stable"
+        elif abs(current_hist) > abs(cls.prev_histogram):
+            return "increasing"
+        else:
+            return "decreasing"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def signal_position(cls) -> Literal["above_signal", "below_signal", "at_signal"]:
+        """Determine MACD position relative to signal line."""
+        diff = abs(cls.macd_value - cls.signal_value)
+        if diff < Decimal("0.01"):
+            return "at_signal"
+        elif cls.macd_value > cls.signal_value:
+            return "above_signal"
+        else:
+            return "below_signal"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def histogram_trend(cls) -> Literal["expanding", "contracting", "neutral"]:
+        """Determine if histogram is expanding or contracting."""
+        if cls.prev_histogram is None:
+            return "neutral"
+
+        current = cls.histogram_value
+        previous = cls.prev_histogram
+
+        if abs(current) > abs(previous) * Decimal("1.1"):  # 10% threshold
+            return "expanding"
+        elif abs(current) < abs(previous) * Decimal("0.9"):
+            return "contracting"
+        else:
+            return "neutral"
 
     # Crossover detection
     crossover_detected: bool = Field(default=False)
     crossover_type: Literal["bullish", "bearish", "none"] = Field(default="none")
 
     # Zero line analysis
-    above_zero: bool = Field(description="Whether MACD is above zero line")
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def above_zero(cls) -> bool:
+        """Whether MACD is above zero line."""
+        return cls.macd_primitive.is_positive
+
     zero_cross: Literal["bullish", "bearish", "none"] = Field(default="none")
+
+    # Domain primitive as computed field
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def macd_primitive(cls) -> MACDValue:
+        """Get MACD as domain primitive with rich behavior."""
+        return MACDValue(macd_line=cls.macd_value, signal_line=cls.signal_value)
 
     @field_validator("slow_period")
     @classmethod
@@ -122,23 +187,16 @@ class MACDAnalysis(BaseIndicator):
         histogram = macd_line - signal_line
 
         # Get current and previous values
-        current_macd = float(macd_line.iloc[-1])
-        current_signal = float(signal_line.iloc[-1])
-        current_histogram = float(histogram.iloc[-1])
+        current_macd = Decimal(str(macd_line.iloc[-1]))
+        current_signal = Decimal(str(signal_line.iloc[-1]))
 
         # Previous values for trend detection
-        prev_macd = float(macd_line.iloc[-2]) if len(macd_line) > 1 else None
-        prev_signal = float(signal_line.iloc[-2]) if len(signal_line) > 1 else None
-        prev_histogram = float(histogram.iloc[-2]) if len(histogram) > 1 else None
-
-        # Determine trends and crossovers
-        trend = cls._determine_trend(current_macd, current_histogram)
-        momentum = cls._determine_momentum(
-            current_histogram, prev_histogram if prev_histogram else current_histogram
+        prev_macd = Decimal(str(macd_line.iloc[-2])) if len(macd_line) > 1 else None
+        prev_signal = (
+            Decimal(str(signal_line.iloc[-2])) if len(signal_line) > 1 else None
         )
-        signal_position = cls._determine_signal_position(current_macd, current_signal)
-        histogram_trend = cls._determine_histogram_trend(
-            current_histogram, prev_histogram if prev_histogram else current_histogram
+        prev_histogram = (
+            Decimal(str(histogram.iloc[-2])) if len(histogram) > 1 else None
         )
 
         # Check for crossovers
@@ -150,7 +208,6 @@ class MACDAnalysis(BaseIndicator):
             )
 
         # Check zero line
-        above_zero = current_macd > 0
         zero_cross = cls._check_zero_cross(current_macd, prev_macd)
 
         return cls(
@@ -161,76 +218,20 @@ class MACDAnalysis(BaseIndicator):
             signal_period=signal_period,
             macd_value=current_macd,
             signal_value=current_signal,
-            histogram_value=current_histogram,
             prev_macd=prev_macd,
             prev_signal=prev_signal,
             prev_histogram=prev_histogram,
-            trend=trend,
-            momentum=momentum,
-            signal_position=signal_position,
-            histogram_trend=histogram_trend,
             crossover_detected=crossover_detected,
             crossover_type=crossover_type,
-            above_zero=above_zero,
             zero_cross=zero_cross,
         )
 
     @staticmethod
-    def _determine_trend(
-        macd: float, histogram: float
-    ) -> Literal["bullish", "bearish", "neutral"]:
-        """Determine overall trend based on MACD and histogram."""
-        if macd > 0 and histogram > 0:
-            return "bullish"
-        elif macd < 0 and histogram < 0:
-            return "bearish"
-        else:
-            return "neutral"
-
-    @staticmethod
-    def _determine_momentum(
-        current_hist: float, prev_hist: float
-    ) -> Literal["increasing", "decreasing", "stable"]:
-        """Determine momentum based on histogram changes."""
-        diff = abs(current_hist - prev_hist)
-        if diff < 0.01:  # Threshold for considering stable
-            return "stable"
-        elif abs(current_hist) > abs(prev_hist):
-            return "increasing"
-        else:
-            return "decreasing"
-
-    @staticmethod
-    def _determine_signal_position(
-        macd: float, signal: float
-    ) -> Literal["above_signal", "below_signal", "at_signal"]:
-        """Determine MACD position relative to signal line."""
-        diff = abs(macd - signal)
-        if diff < 0.01:  # Threshold for considering equal
-            return "at_signal"
-        elif macd > signal:
-            return "above_signal"
-        else:
-            return "below_signal"
-
-    @staticmethod
-    def _determine_histogram_trend(
-        current: float, previous: float
-    ) -> Literal["expanding", "contracting", "neutral"]:
-        """Determine if histogram is expanding or contracting."""
-        if abs(current) > abs(previous) * 1.1:  # 10% threshold
-            return "expanding"
-        elif abs(current) < abs(previous) * 0.9:
-            return "contracting"
-        else:
-            return "neutral"
-
-    @staticmethod
     def _check_crossover(
-        current_macd: float,
-        current_signal: float,
-        prev_macd: float,
-        prev_signal: float,
+        current_macd: Decimal,
+        current_signal: Decimal,
+        prev_macd: Decimal,
+        prev_signal: Decimal,
     ) -> tuple[bool, Literal["bullish", "bearish", "none"]]:
         """Check for MACD/Signal line crossover."""
         # Previous: MACD below signal, Current: MACD above signal = Bullish
@@ -244,7 +245,7 @@ class MACDAnalysis(BaseIndicator):
 
     @staticmethod
     def _check_zero_cross(
-        current: float, previous: float | None
+        current: Decimal, previous: Decimal | None
     ) -> Literal["bullish", "bearish", "none"]:
         """Check for zero line crossover."""
         if previous is None:
@@ -260,10 +261,13 @@ class MACDAnalysis(BaseIndicator):
 
     def semantic_summary(self) -> str:
         """Generate one-line summary for logging."""
-        trend_str = self.trend.title()
-        position_str = self.signal_position.replace("_", " ")
+        # Use primitive's format_display for consistent formatting
+        primitive_display = self.macd_primitive.format_display()
 
-        summary = f"{trend_str} trend, MACD {position_str}"
+        trend_str = self.trend.title()
+        self.signal_position.replace("_", " ")
+
+        summary = f"{trend_str} trend, {primitive_display}"
 
         if self.crossover_detected:
             summary += f" ({self.crossover_type} crossover)"
@@ -278,11 +282,16 @@ class MACDAnalysis(BaseIndicator):
         """Format analysis for agent consumption."""
         interpretation = self._generate_interpretation()
 
+        # Convert Decimal to float for the context
+        macd_float = float(self.macd_value)
+        signal_float = float(self.signal_value)
+        histogram_float = float(self.histogram_value)
+
         return MACDAgentContext(
             values=MACDValues(
-                macd=self.macd_value,
-                signal=self.signal_value,
-                histogram=self.histogram_value,
+                macd=macd_float,
+                signal=signal_float,
+                histogram=histogram_float,
             ),
             trend=self.trend,
             momentum=self.momentum,
@@ -349,7 +358,7 @@ class MACDAnalysis(BaseIndicator):
             return SignalSuggestion(
                 bias="bullish" if self.zero_cross == "bullish" else "bearish",
                 strength="moderate",
-                reason=f"MACD crossed {'above' if self.zero_cross == 'bullish' else 'below'} zero",
+                reason=f"MACD crossed {'above' if self.zero_cross == 'bullish' else 'below'} zero",  # noqa: E501
                 action="prepare_entry"
                 if self.zero_cross == "bullish"
                 else "reduce_risk",
